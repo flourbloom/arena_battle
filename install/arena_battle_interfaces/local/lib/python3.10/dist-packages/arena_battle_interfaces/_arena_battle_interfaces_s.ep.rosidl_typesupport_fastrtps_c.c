@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_generator_py/arena_battle_interfaces/_arena_battle_interfaces_s.ep.rosidl_typesupport_fastrtps_c.c

@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/src/arena_battle_interfaces/msg/RobotCombatCommand.msg

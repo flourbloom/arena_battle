@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_generator_py/arena_battle_interfaces/msg/_robot_combat_command.py

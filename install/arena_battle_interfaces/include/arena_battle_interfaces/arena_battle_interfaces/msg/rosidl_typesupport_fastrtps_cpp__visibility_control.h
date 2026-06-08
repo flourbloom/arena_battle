@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_typesupport_fastrtps_cpp/arena_battle_interfaces/msg/rosidl_typesupport_fastrtps_cpp__visibility_control.h

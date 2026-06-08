@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_generator_rs/arena_battle_interfaces/rust/src/msg.rs

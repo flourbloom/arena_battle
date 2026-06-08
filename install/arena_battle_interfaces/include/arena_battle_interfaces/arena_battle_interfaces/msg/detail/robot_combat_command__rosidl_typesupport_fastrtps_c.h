@@ -1,1 +1,0 @@
-/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_typesupport_fastrtps_c/arena_battle_interfaces/msg/detail/robot_combat_command__rosidl_typesupport_fastrtps_c.h
