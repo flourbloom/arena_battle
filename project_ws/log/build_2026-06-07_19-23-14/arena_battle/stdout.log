@@ -1,0 +1,41 @@
+running egg_info
+creating ../../build/arena_battle/arena_battle.egg-info
+writing ../../build/arena_battle/arena_battle.egg-info/PKG-INFO
+writing dependency_links to ../../build/arena_battle/arena_battle.egg-info/dependency_links.txt
+writing entry points to ../../build/arena_battle/arena_battle.egg-info/entry_points.txt
+writing requirements to ../../build/arena_battle/arena_battle.egg-info/requires.txt
+writing top-level names to ../../build/arena_battle/arena_battle.egg-info/top_level.txt
+writing manifest file '../../build/arena_battle/arena_battle.egg-info/SOURCES.txt'
+reading manifest file '../../build/arena_battle/arena_battle.egg-info/SOURCES.txt'
+writing manifest file '../../build/arena_battle/arena_battle.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/keepitupp/project_ws/build/arena_battle/build
+creating /home/keepitupp/project_ws/build/arena_battle/build/lib
+creating /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle
+copying arena_battle/keyboard_controller.py -> /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle
+copying arena_battle/__init__.py -> /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle
+copying arena_battle/game_logic.py -> /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle
+running install
+running install_lib
+creating /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle
+copying /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle/keyboard_controller.py -> /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle
+copying /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle/__init__.py -> /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle
+copying /home/keepitupp/project_ws/build/arena_battle/build/lib/arena_battle/game_logic.py -> /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle
+byte-compiling /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle/keyboard_controller.py to keyboard_controller.cpython-310.pyc
+byte-compiling /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle/__init__.py to __init__.cpython-310.pyc
+byte-compiling /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle/game_logic.py to game_logic.cpython-310.pyc
+running install_data
+creating /home/keepitupp/project_ws/install/arena_battle/share/ament_index
+creating /home/keepitupp/project_ws/install/arena_battle/share/ament_index/resource_index
+creating /home/keepitupp/project_ws/install/arena_battle/share/ament_index/resource_index/packages
+copying resource/arena_battle -> /home/keepitupp/project_ws/install/arena_battle/share/ament_index/resource_index/packages
+copying package.xml -> /home/keepitupp/project_ws/install/arena_battle/share/arena_battle
+creating /home/keepitupp/project_ws/install/arena_battle/share/arena_battle/launch
+copying launch/battle.launch.py -> /home/keepitupp/project_ws/install/arena_battle/share/arena_battle/launch
+running install_egg_info
+Copying ../../build/arena_battle/arena_battle.egg-info to /home/keepitupp/project_ws/install/arena_battle/lib/python3.10/site-packages/arena_battle-0.0.0-py3.10.egg-info
+running install_scripts
+Installing game_logic script to /home/keepitupp/project_ws/install/arena_battle/lib/arena_battle
+Installing keyboard_controller script to /home/keepitupp/project_ws/install/arena_battle/lib/arena_battle
+writing list of installed files to '/home/keepitupp/project_ws/build/arena_battle/install.log'

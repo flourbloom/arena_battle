@@ -1,0 +1,4 @@
+source;share/arena_battle_interfaces/local_setup.bash
+source;share/arena_battle_interfaces/local_setup.dsv
+source;share/arena_battle_interfaces/local_setup.sh
+source;share/arena_battle_interfaces/local_setup.zsh

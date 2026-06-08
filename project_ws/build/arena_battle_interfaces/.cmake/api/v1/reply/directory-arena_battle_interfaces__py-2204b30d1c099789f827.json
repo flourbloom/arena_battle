@@ -1,0 +1,14 @@
+{
+	"backtraceGraph" : 
+	{
+		"commands" : [],
+		"files" : [],
+		"nodes" : []
+	},
+	"installers" : [],
+	"paths" : 
+	{
+		"build" : "arena_battle_interfaces__py",
+		"source" : "/home/keepitupp/project_ws/build/arena_battle_interfaces/arena_battle_interfaces__py"
+	}
+}

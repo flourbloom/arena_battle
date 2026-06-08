@@ -1,0 +1,6 @@
+{
+  "package_name": "arena_battle_interfaces",
+  "non_idl_tuples": [
+    "/home/keepitupp/project_ws/src/arena_battle_interfaces:msg/RobotCombatCommand.msg"
+  ]
+}
