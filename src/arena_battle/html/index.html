@@ -1,0 +1,1309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Robot Combat Arena 2D</title>
+    <!-- Google Fonts for High-Tech Sci-Fi look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #06070d;
+            --bg-surface: rgba(14, 18, 36, 0.75);
+            --bg-surface-hover: rgba(22, 29, 57, 0.85);
+            --border-glow: rgba(0, 255, 204, 0.2);
+            --border-glow-active: rgba(0, 255, 204, 0.6);
+            --primary: #00ffcc;
+            --primary-glow: rgba(0, 255, 204, 0.4);
+            --secondary: #bd00ff;
+            --secondary-glow: rgba(189, 0, 255, 0.4);
+            --accent: #ff0055;
+            --text-main: #f0f4f8;
+            --text-muted: #8a9fc4;
+            --glass-blur: blur(12px);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: var(--bg-base);
+            font-family: 'Rajdhani', sans-serif;
+            color: var(--text-main);
+        }
+
+        #app-layout {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        /* Canvas occupies full background/viewport */
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            display: block;
+        }
+
+        /* Glassmorphic HUD overlay panels */
+        .hud-panel {
+            position: absolute;
+            z-index: 10;
+            background: var(--bg-surface);
+            backdrop-filter: var(--glass-blur);
+            -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-glow);
+            border-radius: 12px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37), 
+                        inset 0 0 10px rgba(0, 255, 204, 0.05);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .hud-panel:hover {
+            border-color: rgba(0, 255, 204, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5), 
+                        0 0 15px rgba(0, 255, 204, 0.1),
+                        inset 0 0 15px rgba(0, 255, 204, 0.1);
+        }
+
+        /* Top Bar Panel */
+        #header-panel {
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+            animation: pulse-glow 2s infinite alternate;
+        }
+
+        @keyframes pulse-glow {
+            0% { transform: scale(0.9); opacity: 0.6; box-shadow: 0 0 4px var(--primary); }
+            100% { transform: scale(1.1); opacity: 1; box-shadow: 0 0 12px var(--primary); }
+        }
+
+        h1 {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 20px;
+            font-weight: 900;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            background: linear-gradient(90deg, #fff, var(--primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Control Panel Settings */
+        .system-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        .status-value {
+            color: var(--primary);
+            font-family: 'Orbitron', sans-serif;
+        }
+
+        /* Sidebar - Telemetry and Control Feed */
+        #sidebar-panel {
+            top: 110px;
+            left: 20px;
+            bottom: 20px;
+            width: 320px;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        .section-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--primary);
+            border-left: 3px solid var(--primary);
+            padding-left: 8px;
+            margin-bottom: 12px;
+        }
+
+        .telemetry-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+
+        .telemetry-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .telemetry-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-muted);
+        }
+
+        .telemetry-value {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-top: 4px;
+        }
+
+        /* Controls Panel (Action Keys) */
+        .controls-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .control-keybind {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            font-size: 13px;
+        }
+
+        .key-badge {
+            font-family: 'Orbitron', sans-serif;
+            background: rgba(0, 255, 204, 0.1);
+            border: 1px solid var(--primary);
+            color: var(--primary);
+            border-radius: 4px;
+            padding: 2px 6px;
+            font-weight: 700;
+            font-size: 11px;
+            box-shadow: 0 0 5px rgba(0, 255, 204, 0.15);
+        }
+
+        /* Events Log */
+        #event-log {
+            flex-grow: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 12px;
+            font-family: monospace;
+            font-size: 11px;
+            overflow-y: auto;
+            max-height: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            color: var(--text-muted);
+        }
+
+        .log-entry {
+            display: flex;
+            gap: 8px;
+            line-height: 1.4;
+        }
+
+        .log-time {
+            color: var(--primary);
+        }
+
+        .log-msg-info {
+            color: var(--text-main);
+        }
+
+        .log-msg-combat {
+            color: var(--accent);
+            text-shadow: 0 0 4px rgba(255, 0, 85, 0.3);
+        }
+
+        .log-msg-special {
+            color: var(--secondary);
+            text-shadow: 0 0 4px rgba(189, 0, 255, 0.3);
+        }
+
+        /* Interactive On-Screen Gamepad for clicks/touch */
+        #gamepad-panel {
+            bottom: 20px;
+            right: 20px;
+            width: 280px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .direction-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            justify-items: center;
+            align-items: center;
+        }
+
+        .action-pad {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .btn-control {
+            width: 60px;
+            height: 60px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--border-glow);
+            color: var(--text-main);
+            font-family: 'Orbitron', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.1s ease;
+        }
+
+        .btn-control:hover {
+            background: var(--bg-surface-hover);
+            border-color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
+            color: var(--primary);
+        }
+
+        .btn-control:active, .btn-control.active {
+            background: rgba(0, 255, 204, 0.15);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary);
+            color: var(--primary);
+            transform: scale(0.95);
+        }
+
+        .btn-action {
+            height: 45px;
+            width: auto;
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-action.shoot-btn:hover {
+            border-color: var(--primary);
+            color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.2);
+        }
+        
+        .btn-action.shield-btn:hover {
+            border-color: #00d2ff;
+            color: #00d2ff;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.2);
+        }
+
+        .btn-action.special-btn:hover {
+            border-color: var(--secondary);
+            color: var(--secondary);
+            box-shadow: 0 0 10px rgba(189, 0, 255, 0.2);
+        }
+
+        .btn-action.shoot-btn:active, .btn-action.shoot-btn.active {
+            background: rgba(0, 255, 204, 0.2);
+            border-color: var(--primary);
+            box-shadow: 0 0 15px var(--primary);
+        }
+
+        .btn-action.shield-btn:active, .btn-action.shield-btn.active {
+            background: rgba(0, 210, 255, 0.2);
+            border-color: #00d2ff;
+            box-shadow: 0 0 15px #00d2ff;
+            color: #00d2ff;
+        }
+
+        .btn-action.special-btn:active, .btn-action.special-btn.active {
+            background: rgba(189, 0, 255, 0.2);
+            border-color: var(--secondary);
+            box-shadow: 0 0 15px var(--secondary);
+        }
+
+        /* Sound toggle button */
+        .toggle-sound {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: var(--text-muted);
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-family: 'Rajdhani', sans-serif;
+            font-weight: 700;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+
+        .toggle-sound.enabled {
+            border-color: var(--primary);
+            color: var(--primary);
+            box-shadow: 0 0 10px rgba(0, 255, 204, 0.15);
+        }
+
+        /* Scrollbar styles */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 255, 204, 0.2);
+            border-radius: 2px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary);
+        }
+    </style>
+</head>
+<body>
+    <div id="app-layout">
+        <!-- The visual 2D rendering canvas -->
+        <canvas id="game-canvas"></canvas>
+
+        <!-- Top Header Overlay -->
+        <div id="header-panel" class="hud-panel">
+            <div class="logo-container">
+                <div class="logo-indicator"></div>
+                <h1>Robot Combat Arena</h1>
+            </div>
+            <div class="system-status">
+                <div class="status-item">
+                    <span>Host Status:</span>
+                    <span class="status-value">ONLINE</span>
+                </div>
+                <div class="status-item">
+                    <span>Feed:</span>
+                    <span id="feed-status" class="status-value" style="color: #ff0055;">DISCONNECTED</span>
+                </div>
+                <button id="sound-btn" class="toggle-sound">Sound: OFF</button>
+            </div>
+        </div>
+
+        <!-- Left Sidebar (Telemetry & Logs) -->
+        <div id="sidebar-panel" class="hud-panel">
+            <div>
+                <div class="section-title">Telemetry</div>
+                <div class="telemetry-grid">
+                    <div class="telemetry-card">
+                        <span class="telemetry-label">X coordinate</span>
+                        <span id="tel-x" class="telemetry-value">0.00</span>
+                    </div>
+                    <div class="telemetry-card">
+                        <span class="telemetry-label">Y coordinate</span>
+                        <span id="tel-y" class="telemetry-value">0.00</span>
+                    </div>
+                    <div class="telemetry-card" style="grid-column: span 2;">
+                        <span class="telemetry-label">Rotation (Heading)</span>
+                        <span id="tel-theta" class="telemetry-value">0.00°</span>
+                    </div>
+                </div>
+            </div>
+
+            <div>
+                <div class="section-title">Keyboard Controls</div>
+                <div class="controls-list">
+                    <div class="control-keybind">
+                        <span>Move Forward / Backward</span>
+                        <div><span class="key-badge">W</span> <span class="key-badge">S</span></div>
+                    </div>
+                    <div class="control-keybind">
+                        <span>Rotate Left / Right</span>
+                        <div><span class="key-badge">A</span> <span class="key-badge">D</span></div>
+                    </div>
+                    <div class="control-keybind">
+                        <span>Laser Beam Shoot</span>
+                        <span class="key-badge">SPACE</span>
+                    </div>
+                    <div class="control-keybind">
+                        <span>Energy Shield</span>
+                        <span class="key-badge">Q</span>
+                    </div>
+                    <div class="control-keybind">
+                        <span>Special Shockwave</span>
+                        <span class="key-badge">E</span>
+                    </div>
+                </div>
+            </div>
+
+            <div style="flex-grow: 1; display: flex; flex-direction: column;">
+                <div class="section-title">Combat Feed Logs</div>
+                <div id="event-log">
+                    <div class="log-entry">
+                        <span class="log-time">[00:00:00]</span>
+                        <span class="log-msg-info">System initialized. Awaiting data stream...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Right Virtual Gamepad Overlay -->
+        <div id="gamepad-panel" class="hud-panel">
+            <div class="section-title" style="margin-bottom: 0;">Interactive Gamepad</div>
+            <div class="direction-pad">
+                <div></div>
+                <button class="btn-control" id="btn-w">W</button>
+                <div></div>
+                <button class="btn-control" id="btn-a">A</button>
+                <button class="btn-control" id="btn-s">S</button>
+                <button class="btn-control" id="btn-d">D</button>
+                <div></div>
+                <div></div>
+                <div></div>
+            </div>
+            <div class="action-pad">
+                <button class="btn-control btn-action shoot-btn" id="btn-shoot">Shoot</button>
+                <button class="btn-control btn-action shield-btn" id="btn-shield">Shield</button>
+                <button class="btn-control btn-action special-btn" id="btn-special">Special</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Set up the HTML5 canvas
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Web Audio Context setup
+        let audioCtx = null;
+        let soundEnabled = false;
+
+        const soundBtn = document.getElementById('sound-btn');
+        soundBtn.addEventListener('click', () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            soundEnabled = !soundEnabled;
+            if (soundEnabled) {
+                soundBtn.textContent = "Sound: ON";
+                soundBtn.classList.add('enabled');
+                // Play init beep
+                playBeep(440, 0.1, 'sine');
+            } else {
+                soundBtn.textContent = "Sound: OFF";
+                soundBtn.classList.remove('enabled');
+            }
+        });
+
+        function playBeep(freq, duration, type='sine') {
+            if (!soundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = type;
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + duration);
+        }
+
+        function playLaserSound() {
+            if (!soundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(900, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.15);
+            
+            gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.15);
+        }
+
+        function playShieldSound() {
+            if (!soundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(350, audioCtx.currentTime + 0.35);
+            
+            gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.35);
+        }
+
+        function playSpecialSound() {
+            if (!soundEnabled || !audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(250, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.65);
+            
+            gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0.001, audioCtx.currentTime + 0.65);
+            
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.65);
+        }
+
+        // Fit canvas to window sizes
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Game state (targets received from Python, and interpolated current states)
+        const robotState = {
+            // Targets
+            targetX: 0.0,
+            targetY: 0.0,
+            targetTheta: 0.0,
+            
+            // Interpolated values for 60fps animations
+            x: 0.0,
+            y: 0.0,
+            theta: 0.0,
+            
+            // Status flags
+            linearVelocity: 0.0,
+            angularVelocity: 0.0,
+            shieldActive: false,
+            shieldTime: 0, // timer for animation
+            shootTriggered: false,
+            specialTriggered: false
+        };
+
+        // Environment variables
+        const scaleFactor = 60; // 1 unit = 60 pixels
+        let particles = [];
+        let lasers = [];
+        let specialWaves = [];
+
+        // Starfield background
+        const stars = [];
+        for (let i = 0; i < 150; i++) {
+            stars.push({
+                x: Math.random() * 3000 - 1500,
+                y: Math.random() * 3000 - 1500,
+                size: Math.random() * 1.5 + 0.5,
+                brightness: Math.random() * 0.5 + 0.5
+            });
+        }
+
+        // SSE Connection setup
+        let eventSource = null;
+
+        function connectSSE() {
+            const feedStatus = document.getElementById('feed-status');
+            feedStatus.textContent = "CONNECTING...";
+            feedStatus.style.color = "#bd00ff";
+
+            eventSource = new EventSource('/api/sse');
+
+            eventSource.onopen = () => {
+                feedStatus.textContent = "CONNECTED";
+                feedStatus.style.color = "#00ffcc";
+                addLogEntry("SYSTEM", "Data feed connected. Stream listening.", "log-msg-info");
+            };
+
+            eventSource.onerror = (err) => {
+                feedStatus.textContent = "DISCONNECTED";
+                feedStatus.style.color = "#ff0055";
+                eventSource.close();
+                // Try to reconnect in 2 seconds
+                setTimeout(connectSSE, 2000);
+            };
+
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                // Parse coordinates
+                robotState.targetX = data.x;
+                robotState.targetY = data.y;
+                robotState.targetTheta = data.theta;
+                robotState.linearVelocity = data.linear_velocity;
+                robotState.angularVelocity = data.angular_velocity;
+
+                // Update HUD Telemetry text
+                document.getElementById('tel-x').textContent = data.x.toFixed(2);
+                document.getElementById('tel-y').textContent = data.y.toFixed(2);
+                
+                // Keep angle formatted nicely 0-360 deg
+                let deg = ((data.theta * 180 / Math.PI) % 360);
+                if (deg < 0) deg += 360;
+                document.getElementById('tel-theta').textContent = deg.toFixed(1) + "°";
+
+                // Handle events
+                if (data.shoot) {
+                    robotState.shootTriggered = true;
+                }
+                if (data.shield) {
+                    robotState.shieldActive = true;
+                    robotState.shieldTime = 30; // display frame count
+                    playShieldSound();
+                    addLogEntry("DEFENSE", "Shield Activated!", "log-msg-combat");
+                }
+                if (data.weapon_type > 0) {
+                    robotState.specialTriggered = true;
+                }
+            };
+        }
+
+        // Log combat actions in the HTML panel
+        function addLogEntry(sender, message, styleClass) {
+            const logBox = document.getElementById('event-log');
+            const now = new Date();
+            const timeStr = now.toTimeString().split(' ')[0];
+
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `<span class="log-time">[${timeStr}]</span> <span class="${styleClass}"><b>${sender}:</b> ${message}</span>`;
+            
+            logBox.appendChild(entry);
+            logBox.scrollTop = logBox.scrollHeight;
+
+            // Keep log short
+            while (logBox.children.length > 30) {
+                logBox.removeChild(logBox.firstChild);
+            }
+        }
+
+        // Particle Class
+        class Particle {
+            constructor(x, y, vx, vy, size, color, maxLife, type = 'spark') {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.size = size;
+                this.color = color;
+                this.life = maxLife;
+                this.maxLife = maxLife;
+                this.type = type;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+                
+                if (this.type === 'exhaust') {
+                    this.size *= 0.95;
+                }
+            }
+
+            draw(cameraX, cameraY) {
+                const alpha = this.life / this.maxLife;
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = this.color;
+                ctx.shadowBlur = 8;
+                ctx.shadowColor = this.color;
+                
+                const screenX = canvas.width / 2 + (this.x - cameraX) * scaleFactor;
+                const screenY = canvas.height / 2 + (this.y - cameraY) * scaleFactor;
+
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, this.size, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Laser Class
+        class Laser {
+            constructor(x, y, theta, speed, color) {
+                this.x = x;
+                this.y = y;
+                this.vx = Math.cos(theta) * speed;
+                this.vy = Math.sin(theta) * speed;
+                this.theta = theta;
+                this.color = color;
+                this.life = 60; // frames
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life--;
+                
+                // Spawn laser trail particles
+                if (Math.random() < 0.4) {
+                    particles.push(new Particle(
+                        this.x, this.y, 
+                        (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.05, 
+                        Math.random() * 2 + 1, 
+                        this.color, 
+                        15, 
+                        'trail'
+                    ));
+                }
+            }
+
+            draw(cameraX, cameraY) {
+                const screenX = canvas.width / 2 + (this.x - cameraX) * scaleFactor;
+                const screenY = canvas.height / 2 + (this.y - cameraY) * scaleFactor;
+                
+                ctx.save();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = this.color;
+                ctx.shadowBlur = 10;
+                ctx.shadowColor = this.color;
+                ctx.lineCap = 'round';
+                
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY);
+                // Draw a small line segments backwards to represent speed
+                ctx.lineTo(screenX - this.vx * 1.5, screenY - this.vy * 1.5);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // Special Wave Shockwave Class
+        class Shockwave {
+            constructor(x, y, color) {
+                this.x = x;
+                this.y = y;
+                this.radius = 0.2;
+                this.maxRadius = 5.0; // units
+                this.color = color;
+                this.life = 45;
+                this.maxLife = 45;
+            }
+
+            update() {
+                this.radius += (this.maxRadius - this.radius) * 0.08;
+                this.life--;
+                
+                // Spawn expansion sparks
+                const angle = Math.random() * Math.PI * 2;
+                const spX = this.x + Math.cos(angle) * this.radius;
+                const spY = this.y + Math.sin(angle) * this.radius;
+                particles.push(new Particle(
+                    spX, spY,
+                    Math.cos(angle) * 0.08, Math.sin(angle) * 0.08,
+                    Math.random() * 3 + 1,
+                    this.color,
+                    20,
+                    'spark'
+                ));
+            }
+
+            draw(cameraX, cameraY) {
+                const screenX = canvas.width / 2 + (this.x - cameraX) * scaleFactor;
+                const screenY = canvas.height / 2 + (this.y - cameraY) * scaleFactor;
+                const screenR = this.radius * scaleFactor;
+                const alpha = this.life / this.maxLife;
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth = 6;
+                ctx.strokeStyle = this.color;
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = this.color;
+                
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, screenR, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // Smoothly interpolate position and run rendering loops
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Interpolate robot position
+            // We use simple linear interpolation (Lerp) to get buttery smooth 60fps movement
+            robotState.x += (robotState.targetX - robotState.x) * 0.15;
+            robotState.y += (robotState.targetY - robotState.y) * 0.15;
+            
+            // Interpolate angle handling 360 wrapping
+            let diff = robotState.targetTheta - robotState.theta;
+            diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+            robotState.theta += diff * 0.15;
+
+            // Camera follows the robot smoothly
+            const cameraX = robotState.x;
+            const cameraY = robotState.y;
+
+            // Spawn movement exhaust particles
+            if (Math.abs(robotState.linearVelocity) > 0.05) {
+                // Spawn engine flame/dust particles behind the robot
+                const backAngle = robotState.theta + Math.PI;
+                // Offset back position slightly to spawn at the engine
+                const spawnX = robotState.x + Math.cos(backAngle) * 0.3;
+                const spawnY = robotState.y + Math.sin(backAngle) * 0.3;
+                
+                particles.push(new Particle(
+                    spawnX, spawnY,
+                    Math.cos(backAngle + (Math.random() - 0.5) * 0.5) * 0.1,
+                    Math.sin(backAngle + (Math.random() - 0.5) * 0.5) * 0.1,
+                    Math.random() * 4 + 2,
+                    '#ff5500',
+                    20,
+                    'exhaust'
+                ));
+            }
+
+            // Handle Triggered Events
+            if (robotState.shootTriggered) {
+                robotState.shootTriggered = false;
+                playLaserSound();
+                addLogEntry("WEAPON", "Laser beam fired!", "log-msg-combat");
+                // Spawn a laser projectile starting at the turret
+                lasers.push(new Laser(
+                    robotState.x + Math.cos(robotState.theta) * 0.4, 
+                    robotState.y + Math.sin(robotState.theta) * 0.4, 
+                    robotState.theta, 
+                    0.25, 
+                    varStyle('--primary')
+                ));
+            }
+
+            if (robotState.specialTriggered) {
+                robotState.specialTriggered = false;
+                playSpecialSound();
+                addLogEntry("WEAPON", "SPECIAL RADIAL SHOCKWAVE DETONATED!", "log-msg-special");
+                // Spawn radial wave
+                specialWaves.push(new Shockwave(robotState.x, robotState.y, varStyle('--secondary')));
+                
+                // Spawn extra sparks flying in all directions
+                for (let i = 0; i < 40; i++) {
+                    const spAngle = Math.random() * Math.PI * 2;
+                    const spSpeed = Math.random() * 0.12 + 0.03;
+                    particles.push(new Particle(
+                        robotState.x, robotState.y,
+                        Math.cos(spAngle) * spSpeed, Math.sin(spAngle) * spSpeed,
+                        Math.random() * 3 + 2,
+                        varStyle('--secondary'),
+                        35,
+                        'spark'
+                    ));
+                }
+            }
+
+            // Update entities
+            lasers.forEach(laser => laser.update());
+            lasers = lasers.filter(laser => laser.life > 0);
+
+            specialWaves.forEach(wave => wave.update());
+            specialWaves = specialWaves.filter(wave => wave.life > 0);
+
+            particles.forEach(p => p.update());
+            particles = particles.filter(p => p.life > 0);
+
+            // Clean Canvas
+            ctx.fillStyle = varStyle('--bg-base');
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw drifting stars
+            ctx.fillStyle = '#ffffff';
+            stars.forEach(star => {
+                // Wrap stars for infinite stars illusion relative to camera
+                let screenX = (star.x - cameraX * 10) % canvas.width;
+                let screenY = (star.y - cameraY * 10) % canvas.height;
+                if (screenX < 0) screenX += canvas.width;
+                if (screenY < 0) screenY += canvas.height;
+
+                ctx.globalAlpha = star.brightness;
+                ctx.fillRect(screenX, screenY, star.size, star.size);
+            });
+            ctx.globalAlpha = 1.0;
+
+            // Draw glowing arena grid background
+            ctx.save();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = varStyle('--border-glow');
+            ctx.shadowBlur = 0;
+            
+            const gridSpacing = 80;
+            // Draw vertical grid lines
+            const startX = Math.floor((cameraX * scaleFactor - canvas.width / 2) / gridSpacing) * gridSpacing;
+            const endX = startX + canvas.width + gridSpacing * 2;
+            for (let x = startX; x < endX; x += gridSpacing) {
+                const screenX = canvas.width / 2 + x - cameraX * scaleFactor;
+                ctx.beginPath();
+                ctx.moveTo(screenX, 0);
+                ctx.lineTo(screenX, canvas.height);
+                ctx.stroke();
+            }
+
+            // Draw horizontal grid lines
+            const startY = Math.floor((cameraY * scaleFactor - canvas.height / 2) / gridSpacing) * gridSpacing;
+            const endY = startY + canvas.height + gridSpacing * 2;
+            for (let y = startY; y < endY; y += gridSpacing) {
+                const screenY = canvas.height / 2 + y - cameraY * scaleFactor;
+                ctx.beginPath();
+                ctx.moveTo(0, screenY);
+                ctx.lineTo(canvas.width, screenY);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            // Draw Arena Boundaries (e.g. Bounded red neon square at world coordinates -15 to +15 units)
+            const minUnit = -15.0;
+            const maxUnit = 15.0;
+            ctx.save();
+            ctx.lineWidth = 4;
+            ctx.strokeStyle = varStyle('--accent');
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = varStyle('--accent');
+            
+            const bLeft = canvas.width / 2 + (minUnit - cameraX) * scaleFactor;
+            const bRight = canvas.width / 2 + (maxUnit - cameraX) * scaleFactor;
+            const bTop = canvas.height / 2 + (minUnit - cameraY) * scaleFactor;
+            const bBottom = canvas.height / 2 + (maxUnit - cameraY) * scaleFactor;
+
+            ctx.beginPath();
+            ctx.rect(bLeft, bTop, bRight - bLeft, bBottom - bTop);
+            ctx.stroke();
+
+            // Draw some diagonal grids in out-of-bounds area
+            ctx.restore();
+
+            // Draw Lasers
+            lasers.forEach(laser => laser.draw(cameraX, cameraY));
+
+            // Draw Special Waves
+            specialWaves.forEach(wave => wave.draw(cameraX, cameraY));
+
+            // Draw Particles
+            particles.forEach(p => p.draw(cameraX, cameraY));
+
+            // Draw the Robot Tank
+            drawRobot(cameraX, cameraY);
+        }
+
+        // Draw robot tank
+        function drawRobot(cameraX, cameraY) {
+            // Draw center coordinate mapped
+            const screenX = canvas.width / 2 + (robotState.x - cameraX) * scaleFactor;
+            const screenY = canvas.height / 2 + (robotState.y - cameraY) * scaleFactor;
+
+            ctx.save();
+            ctx.translate(screenX, screenY);
+            ctx.rotate(robotState.theta);
+
+            // 1. Draw treads/tracks (glowing green/blue)
+            ctx.fillStyle = '#101726';
+            ctx.strokeStyle = varStyle('--primary');
+            ctx.lineWidth = 1.5;
+            ctx.shadowBlur = 5;
+            ctx.shadowColor = varStyle('--primary');
+            
+            // Left track
+            ctx.fillRect(-22, -18, 44, 8);
+            ctx.strokeRect(-22, -18, 44, 8);
+            // Right track
+            ctx.fillRect(-22, 10, 44, 8);
+            ctx.strokeRect(-22, 10, 44, 8);
+
+            // Draw details inside treads
+            ctx.strokeStyle = 'rgba(0, 255, 204, 0.4)';
+            ctx.lineWidth = 1;
+            for (let i = -18; i <= 18; i += 6) {
+                ctx.beginPath();
+                ctx.moveTo(i, -18); ctx.lineTo(i, -10);
+                ctx.moveTo(i, 10); ctx.lineTo(i, 18);
+                ctx.stroke();
+            }
+
+            // 2. Draw Main Body
+            // Gradient fill for body
+            const bodyGrad = ctx.createLinearGradient(-15, 0, 15, 0);
+            bodyGrad.addColorStop(0, '#1e293b');
+            bodyGrad.addColorStop(1, '#0f172a');
+            
+            ctx.fillStyle = bodyGrad;
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 8;
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            
+            ctx.beginPath();
+            ctx.roundRect(-16, -11, 32, 22, 5);
+            ctx.fill();
+            ctx.stroke();
+
+            // Armor plates
+            ctx.fillStyle = '#334155';
+            ctx.fillRect(-10, -8, 8, 16);
+
+            // 3. Draw Turret mount (center glowing circle)
+            ctx.fillStyle = '#0f172a';
+            ctx.strokeStyle = varStyle('--primary');
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = varStyle('--primary');
+            
+            ctx.beginPath();
+            ctx.arc(0, 0, 8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            // 4. Draw Turret Barrel (pointing forward along theta)
+            ctx.fillStyle = '#1e293b';
+            ctx.strokeStyle = varStyle('--primary');
+            ctx.lineWidth = 1.5;
+            
+            ctx.beginPath();
+            ctx.rect(2, -3, 20, 6);
+            ctx.fill();
+            ctx.stroke();
+
+            // Barrel nozzle glow tip
+            ctx.fillStyle = varStyle('--primary');
+            ctx.fillRect(20, -2, 3, 4);
+
+            // Front direction indicator light
+            ctx.beginPath();
+            ctx.arc(12, 0, 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // 5. Draw Shield (around robot, not rotated)
+            if (robotState.shieldActive && robotState.shieldTime > 0) {
+                robotState.shieldTime--;
+                if (robotState.shieldTime <= 0) {
+                    robotState.shieldActive = false;
+                }
+
+                ctx.save();
+                ctx.translate(screenX, screenY);
+                
+                // Pulsing size
+                const pulse = Math.sin(Date.now() / 80) * 2;
+                const shieldRadius = 34 + pulse;
+
+                const shieldGrad = ctx.createRadialGradient(0, 0, shieldRadius - 8, 0, 0, shieldRadius + 2);
+                shieldGrad.addColorStop(0, 'rgba(0, 210, 255, 0.01)');
+                shieldGrad.addColorStop(0.7, 'rgba(0, 210, 255, 0.15)');
+                shieldGrad.addColorStop(1, 'rgba(0, 210, 255, 0.6)');
+
+                ctx.fillStyle = shieldGrad;
+                ctx.strokeStyle = '#00d2ff';
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 18;
+                ctx.shadowColor = '#00d2ff';
+                
+                ctx.beginPath();
+                ctx.arc(0, 0, shieldRadius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
+        // Helper to grab CSS root variables
+        function varStyle(name) {
+            return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+        }
+
+        // ---------------- Keyboard and Gamepad Control Handling ----------------
+        const activeKeys = {};
+        const buttons = {
+            'w': document.getElementById('btn-w'),
+            'a': document.getElementById('btn-a'),
+            's': document.getElementById('btn-s'),
+            'd': document.getElementById('btn-d'),
+            'shoot': document.getElementById('btn-shoot'),
+            'shield': document.getElementById('btn-shield'),
+            'special': document.getElementById('btn-special')
+        };
+
+        // Keyboard listeners
+        window.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            let mappedKey = key;
+            if (key === ' ') mappedKey = 'shoot';
+            if (key === 'q') mappedKey = 'shield';
+            if (key === 'e') mappedKey = 'special';
+
+            activeKeys[key] = true;
+            
+            // Add active styling to DOM buttons
+            if (buttons[mappedKey]) {
+                buttons[mappedKey].classList.add('active');
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            let mappedKey = key;
+            if (key === ' ') mappedKey = 'shoot';
+            if (key === 'q') mappedKey = 'shield';
+            if (key === 'e') mappedKey = 'special';
+
+            activeKeys[key] = false;
+            
+            // Remove active styling from DOM buttons
+            if (buttons[mappedKey]) {
+                buttons[mappedKey].classList.remove('active');
+            }
+        });
+
+        // Virtual gamepad button press handlers
+        function setupButtonTouch(btnId, keyName) {
+            const btn = document.getElementById(btnId);
+            
+            const pressStart = (e) => {
+                e.preventDefault();
+                activeKeys[keyName] = true;
+                btn.classList.add('active');
+            };
+            
+            const pressEnd = (e) => {
+                e.preventDefault();
+                activeKeys[keyName] = false;
+                btn.classList.remove('active');
+            };
+
+            btn.addEventListener('mousedown', pressStart);
+            btn.addEventListener('mouseup', pressEnd);
+            btn.addEventListener('mouseleave', pressEnd);
+            
+            btn.addEventListener('touchstart', pressStart, {passive: false});
+            btn.addEventListener('touchend', pressEnd, {passive: false});
+        }
+
+        setupButtonTouch('btn-w', 'w');
+        setupButtonTouch('btn-a', 'a');
+        setupButtonTouch('btn-s', 's');
+        setupButtonTouch('btn-d', 'd');
+        setupButtonTouch('btn-shoot', ' ');
+        setupButtonTouch('btn-shield', 'q');
+        setupButtonTouch('btn-special', 'e');
+
+        // Network Command Sender
+        let hasActiveMovement = false;
+
+        async function sendControl(linear, angular, shoot, shield, weapon_type) {
+            try {
+                const response = await fetch('/api/command', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        linear_velocity: linear,
+                        angular_velocity: angular,
+                        shoot: shoot,
+                        shield: shield,
+                        weapon_type: weapon_type
+                    })
+                });
+            } catch (err) {
+                console.error("Failed to send command to Python node: ", err);
+            }
+        }
+
+        // Control Loop running at 20Hz (every 50ms) matching ROS 2 rate
+        setInterval(() => {
+            let linear = 0.0;
+            let angular = 0.0;
+            let shoot = false;
+            let shield = false;
+            let weapon_type = 0;
+
+            if (activeKeys['w']) linear += 1.0;
+            if (activeKeys['s']) linear -= 1.0;
+            // standard a rot left, d rot right
+            if (activeKeys['a']) angular += 1.0;
+            if (activeKeys['d']) angular -= 1.0;
+
+            if (activeKeys[' ']) {
+                shoot = true;
+                activeKeys[' '] = false; // consume press
+            }
+            if (activeKeys['q']) {
+                shield = true;
+                activeKeys['q'] = false; // consume press
+            }
+            if (activeKeys['e']) {
+                weapon_type = 1;
+                activeKeys['e'] = false; // consume press
+            }
+
+            const moving = (linear !== 0.0 || angular !== 0.0);
+            
+            // Only send if moving, performing an action, or just stopped moving to settle physics
+            if (moving || shoot || shield || weapon_type > 0 || hasActiveMovement) {
+                sendControl(linear, angular, shoot, shield, weapon_type);
+                hasActiveMovement = moving;
+            }
+        }, 50);
+
+        // Start SSE stream and animation loops
+        connectSSE();
+        animate();
+    </script>
+</body>
+</html>
