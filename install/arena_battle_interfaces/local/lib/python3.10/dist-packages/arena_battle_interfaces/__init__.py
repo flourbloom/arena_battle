@@ -1,0 +1,1 @@
+/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_generator_py/arena_battle_interfaces/__init__.py

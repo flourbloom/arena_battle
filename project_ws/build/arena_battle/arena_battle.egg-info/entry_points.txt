@@ -1,4 +1,0 @@
-[console_scripts]
-game_logic = arena_battle.game_logic:main
-keyboard_controller = arena_battle.keyboard_controller:main
-

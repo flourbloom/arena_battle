@@ -1,0 +1,1 @@
+/home/keepitupp/project_ws/build/arena_battle_interfaces/ament_cmake_core/arena_battle_interfacesConfig-version.cmake

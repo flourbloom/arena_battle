@@ -1,0 +1,1 @@
+/home/keepitupp/project_ws/build/arena_battle_interfaces/rosidl_generator_cpp/arena_battle_interfaces/msg/detail/robot_combat_command__traits.hpp
