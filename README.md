@@ -53,7 +53,7 @@ graph TD
     *   **Role**: Acts as the game client and main user interface.
     *   **Logic**:
         *   **View**: Receives `/robot_state` and draws the robot chassis, rotating turret, active shield, moving projectiles, score, HP, and ammo panels.
-        *   **Local Visuals**: Spawns exhaust trails, muzzle flashes, and wall impact explosions by monitoring when new projectiles appear or disappear from the state.
+        *   **Local Visuals**: Spawns muzzle flashes and wall impact explosions by monitoring when new projectiles appear or disappear from the state.
         *   **Controller**: Captures keyboard (`W`/`A`/`S`/`D`/`Space`/`Q`/`E`) and mouse movement/clicking events within the GUI window and publishes them.
     *   **Subscribes to**: `/robot_state`
     *   **Publishes to**: `/robot_command`
