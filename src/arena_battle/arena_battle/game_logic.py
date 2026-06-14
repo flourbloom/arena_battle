@@ -47,10 +47,22 @@ class GameLogic(Node):
         self.get_logger().info('Use WASD to move, mouse to aim turret')
 
     def command_callback(self, msg):
+        # Update turret angle (relative to base)
+        self.turret_angle = msg.turret_angle
+        
         # Update robot pose
         self.theta += msg.angular_velocity * 0.1
-        self.x += msg.linear_velocity * math.cos(self.theta) * 0.2
-        self.y += msg.linear_velocity * math.sin(self.theta) * 0.2
+        new_x = self.x + msg.linear_velocity * math.cos(self.theta) * 0.2
+        new_y = self.y + msg.linear_velocity * math.sin(self.theta) * 0.2
+        
+        # Circular arena boundary constraint (radius 3.5m, robot radius ~0.25m -> max_r = 3.25m)
+        dist = math.sqrt(new_x**2 + new_y**2)
+        if dist > 3.25:
+            self.x = 3.25 * new_x / dist
+            self.y = 3.25 * new_y / dist
+        else:
+            self.x = new_x
+            self.y = new_y
         
         # Handle weapons
         if msg.shoot:
@@ -71,9 +83,10 @@ class GameLogic(Node):
         marker.type = Marker.SPHERE
         marker.action = Marker.ADD
         
-        # Position from turret
-        marker.pose.position.x = self.x + 0.3 * math.cos(self.theta)
-        marker.pose.position.y = self.y + 0.3 * math.sin(self.theta)
+        # Position from turret (using absolute turret angle: heading + turret_angle)
+        absolute_turret_angle = self.theta + self.turret_angle
+        marker.pose.position.x = self.x + 0.3 * math.cos(absolute_turret_angle)
+        marker.pose.position.y = self.y + 0.3 * math.sin(absolute_turret_angle)
         marker.pose.position.z = 0.1
         
         marker.scale.x = 0.05

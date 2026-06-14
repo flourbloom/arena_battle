@@ -30,6 +30,7 @@ class KeyboardController(Node):
             
             # Create and publish command message
             msg = RobotCombatCommand()
+            msg.turret_angle = 0.0
             
             # Handle movement
             if key == 'w':

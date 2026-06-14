@@ -35,8 +35,17 @@ class RobotPoseTF(Node):
     def command_callback(self, msg):
         # Update robot pose based on commands (matching game_logic)
         self.theta += msg.angular_velocity * 0.1
-        self.x += msg.linear_velocity * math.cos(self.theta) * 0.2
-        self.y += msg.linear_velocity * math.sin(self.theta) * 0.2
+        new_x = self.x + msg.linear_velocity * math.cos(self.theta) * 0.2
+        new_y = self.y + msg.linear_velocity * math.sin(self.theta) * 0.2
+        
+        # Circular arena boundary constraint (radius 3.5m, robot radius ~0.25m -> max_r = 3.25m)
+        dist = math.sqrt(new_x**2 + new_y**2)
+        if dist > 3.25:
+            self.x = 3.25 * new_x / dist
+            self.y = 3.25 * new_y / dist
+        else:
+            self.x = new_x
+            self.y = new_y
     
     def publish_transform(self):
         # Create transform from map to base_link

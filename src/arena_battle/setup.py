@@ -29,6 +29,7 @@ setup(
             'keyboard_controller = arena_battle.keyboard_controller:main',
             'game_logic = arena_battle.game_logic:main',
             'robot_pose_tf = arena_battle.robot_pose_tf:main',
+            'pygame_visualizer = arena_battle.pygame_visualizer:main',
         ],
     },
 )
