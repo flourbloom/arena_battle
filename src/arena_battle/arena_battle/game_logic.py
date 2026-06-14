@@ -1,22 +1,34 @@
 #!/usr/bin/env python3
 
 import math
+import time
 import rclpy
 from rclpy.node import Node
-from visualization_msgs.msg import Marker
-from geometry_msgs.msg import TransformStamped
-from arena_battle_interfaces.msg import RobotCombatCommand
-from std_msgs.msg import Float64
+from arena_battle_interfaces.msg import RobotCombatCommand, RobotState, Projectile
 
 class GameLogic(Node):
     def __init__(self):
         super().__init__('game_logic')
         
-        # Robot pose
+        # Robot pose and game state
         self.x = 0.0
         self.y = 0.0
         self.theta = 0.0
         self.turret_angle = 0.0
+        
+        self.health = 100
+        self.shield_active = False
+        self.shield_duration = 0.0
+        self.shield_energy = 100.0
+        self.score = 0
+        self.ammo = 10
+        self.max_ammo = 10
+        self.ammo_regen_timer = 0.0
+        self.game_over = False
+        self.start_time = None
+        
+        self.projectiles = []  # list of dicts: {'id': int, 'x': float, 'y': float, 'vx': float, 'vy': float, 'type': int, 'lifetime': float}
+        self.projectile_id_counter = 0
         
         # Subscribe to robot commands
         self.sub = self.create_subscription(
@@ -26,27 +38,23 @@ class GameLogic(Node):
             10
         )
         
-        # Publisher for turret joint
-        self.turret_pub = self.create_publisher(
-            Float64,
-            '/turret_joint/command',
+        # Publisher for game/robot state
+        self.state_pub = self.create_publisher(
+            RobotState,
+            '/robot_state',
             10
         )
         
-        # Publisher for projectile markers (kept for shooting effects)
-        self.marker_pub = self.create_publisher(
-            Marker, 
-            '/projectile_marker', 
-            10
-        )
+        # Timer for updates (50Hz -> dt = 0.02s)
+        self.dt = 0.02
+        self.timer = self.create_timer(self.dt, self.update_game)
         
-        # Timer for updates
-        self.timer = self.create_timer(0.05, self.update_robot)
-        
-        self.get_logger().info('Game Logic Ready - Arena Battle Robot')
-        self.get_logger().info('Use WASD to move, mouse to aim turret')
+        self.get_logger().info('Game Logic (Model Node) Ready!')
 
     def command_callback(self, msg):
+        if self.game_over:
+            return
+            
         # Update turret angle (relative to base)
         self.turret_angle = msg.turret_angle
         
@@ -64,87 +72,139 @@ class GameLogic(Node):
             self.x = new_x
             self.y = new_y
         
-        # Handle weapons
+        # Handle weapon firing
         if msg.shoot:
             self.shoot_projectile()
         if msg.shield:
-            self.get_logger().info('🛡️ Shield Activated!')
+            self.activate_shield()
         if msg.weapon_type == 1:
-            self.get_logger().info('⚡ SPECIAL ATTACK!')
             self.shoot_special()
 
     def shoot_projectile(self):
-        # Create projectile marker
-        marker = Marker()
-        marker.header.frame_id = 'map'
-        marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = 'projectile'
-        marker.id = self.get_clock().now().nanosec  # Unique ID
-        marker.type = Marker.SPHERE
-        marker.action = Marker.ADD
-        
-        # Position from turret (using absolute turret angle: heading + turret_angle)
-        absolute_turret_angle = self.theta + self.turret_angle
-        marker.pose.position.x = self.x + 0.3 * math.cos(absolute_turret_angle)
-        marker.pose.position.y = self.y + 0.3 * math.sin(absolute_turret_angle)
-        marker.pose.position.z = 0.1
-        
-        marker.scale.x = 0.05
-        marker.scale.y = 0.05
-        marker.scale.z = 0.05
-        
-        marker.color.r = 1.0
-        marker.color.g = 0.5
-        marker.color.b = 0.0
-        marker.color.a = 1.0
-        
-        # Set lifetime
-        marker.lifetime.sec = 2  # 2 seconds
-        
-        self.marker_pub.publish(marker)
-        self.get_logger().info('💥 PEW! Projectile fired!')
+        if self.ammo > 0:
+            self.ammo -= 1
+            self.projectile_id_counter = (self.projectile_id_counter + 1) % 2147483647
+            
+            absolute_turret_angle = self.theta + self.turret_angle
+            px = self.x + 0.3 * math.cos(absolute_turret_angle)
+            py = self.y + 0.3 * math.sin(absolute_turret_angle)
+            vx = 6.0 * math.cos(absolute_turret_angle)
+            vy = 6.0 * math.sin(absolute_turret_angle)
+            
+            self.projectiles.append({
+                'id': self.projectile_id_counter,
+                'x': px,
+                'y': py,
+                'vx': vx,
+                'vy': vy,
+                'type': 0, # Normal
+                'lifetime': 2.0
+            })
+            self.get_logger().info('💥 PEW! Projectile fired!')
+
+    def activate_shield(self):
+        if not self.shield_active and self.shield_energy >= 30.0:
+            self.shield_active = True
+            self.shield_duration = 1.5
+            self.shield_energy -= 30.0
+            self.get_logger().info('🛡️ Shield Matrix Activated!')
 
     def shoot_special(self):
-        # Create special attack markers
-        for i in range(8):
-            marker = Marker()
-            marker.header.frame_id = 'map'
-            marker.header.stamp = self.get_clock().now().to_msg()
-            marker.ns = 'special_attack'
-            marker.id = self.get_clock().now().nanosec + i
-            marker.type = Marker.SPHERE
-            marker.action = Marker.ADD
-            
-            angle = self.theta + (i * math.pi / 4)
-            marker.pose.position.x = self.x + 0.2 * math.cos(angle)
-            marker.pose.position.y = self.y + 0.2 * math.sin(angle)
-            marker.pose.position.z = 0.15
-            
-            marker.scale.x = 0.04
-            marker.scale.y = 0.04
-            marker.scale.z = 0.04
-            
-            marker.color.r = 0.0
-            marker.color.g = 0.8
-            marker.color.b = 1.0
-            marker.color.a = 1.0
-            
-            marker.lifetime.sec = 1
-            
-            self.marker_pub.publish(marker)
+        if self.ammo >= 5:
+            self.ammo -= 5
+            self.get_logger().info('⚡ SPECIAL RADIAL ATTACK!')
+            for i in range(8):
+                self.projectile_id_counter = (self.projectile_id_counter + 1) % 2147483647
+                angle = self.theta + (i * math.pi / 4)
+                px = self.x + 0.2 * math.cos(angle)
+                py = self.y + 0.2 * math.sin(angle)
+                vx = 4.0 * math.cos(angle)
+                vy = 4.0 * math.sin(angle)
+                
+                self.projectiles.append({
+                    'id': self.projectile_id_counter,
+                    'x': px,
+                    'y': py,
+                    'vx': vx,
+                    'vy': vy,
+                    'type': 1, # Special
+                    'lifetime': 1.0
+                })
 
-    def update_robot(self):
-        # Publish turret angle
-        turret_msg = Float64()
-        turret_msg.data = self.turret_angle
-        self.turret_pub.publish(turret_msg)
+    def update_game(self):
+        if self.start_time is None:
+            self.start_time = time.time()
+            
+        time_elapsed = time.time() - self.start_time
+        
+        # Update shield duration
+        if self.shield_active:
+            self.shield_duration -= self.dt
+            if self.shield_duration <= 0.0:
+                self.shield_active = False
+                
+        # Regenerate shield energy slowly over time
+        if not self.shield_active and self.shield_energy < 100.0:
+            self.shield_energy = min(100.0, self.shield_energy + 5.0 * self.dt) # 5 units per second
+            
+        # Regenerate ammo
+        if self.ammo < self.max_ammo:
+            self.ammo_regen_timer += self.dt
+            if self.ammo_regen_timer >= 1.0: # 1 ammo per second
+                self.ammo += 1
+                self.ammo_regen_timer = 0.0
+                
+        # Update projectiles
+        for p in self.projectiles[:]:
+            p['x'] += p['vx'] * self.dt
+            p['y'] += p['vy'] * self.dt
+            p['lifetime'] -= self.dt
+            
+            # Check boundary
+            dist = math.sqrt(p['x']**2 + p['y']**2)
+            if dist >= 3.5 or p['lifetime'] <= 0.0:
+                self.projectiles.remove(p)
+                # Gain small points for hitting the boundary wall as target practice
+                if not self.game_over:
+                    self.score += 10
+                    
+        # Publish state
+        state_msg = RobotState()
+        state_msg.x = float(self.x)
+        state_msg.y = float(self.y)
+        state_msg.theta = float(self.theta)
+        state_msg.turret_angle = float(self.turret_angle)
+        state_msg.health = int(self.health)
+        state_msg.shield_active = bool(self.shield_active)
+        state_msg.shield_energy = float(self.shield_energy)
+        state_msg.score = int(self.score)
+        state_msg.ammo = int(self.ammo)
+        state_msg.game_over = bool(self.game_over)
+        state_msg.time_elapsed = float(time_elapsed)
+        
+        state_msg.projectiles = []
+        for p in self.projectiles:
+            p_msg = Projectile()
+            p_msg.id = int(p['id'])
+            p_msg.x = float(p['x'])
+            p_msg.y = float(p['y'])
+            p_msg.vx = float(p['vx'])
+            p_msg.vy = float(p['vy'])
+            p_msg.type = int(p['type'])
+            state_msg.projectiles.append(p_msg)
+            
+        self.state_pub.publish(state_msg)
 
 def main(args=None):
     rclpy.init(args=args)
     node = GameLogic()
-    rclpy.spin(node)
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

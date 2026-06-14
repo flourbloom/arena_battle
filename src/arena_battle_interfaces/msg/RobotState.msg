@@ -1,0 +1,12 @@
+float32 x
+float32 y
+float32 theta
+float32 turret_angle
+int32 health
+bool shield_active
+float32 shield_energy
+int32 score
+int32 ammo
+bool game_over
+float32 time_elapsed
+Projectile[] projectiles
