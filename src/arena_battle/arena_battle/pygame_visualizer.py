@@ -87,10 +87,6 @@ class PygameVisualizer(Node):
         self.get_logger().info("Pygame Visualizer (View/Controller Node) Initialized!")
 
     def state_callback(self, msg):
-        # Trigger exhaust particles if robot is moving
-        if msg.x != self.x or msg.y != self.y or msg.theta != self.theta:
-            self.spawn_exhaust_particles()
-            
         # Update pose
         self.x = msg.x
         self.y = msg.y
@@ -121,18 +117,7 @@ class PygameVisualizer(Node):
             color = (255, 100, 0) if p.type == 0 else (0, 204, 255)
             self.spawn_flash_particles(p.x, p.y, angle, color)
             
-        # Spawn impact particles for dead projectiles
-        dead_ids = self.active_projectile_ids - current_ids
-        for pid in dead_ids:
-            if pid in self.prev_projectiles_pos:
-                last_x, last_y, last_type = self.prev_projectiles_pos[pid]
-                dist = math.sqrt(last_x**2 + last_y**2)
-                if dist >= 3.4: # near boundary
-                    impact_angle = math.atan2(last_y, last_x)
-                    ix = 3.5 * math.cos(impact_angle)
-                    iy = 3.5 * math.sin(impact_angle)
-                    color = (255, 100, 0) if last_type == 0 else (0, 204, 255)
-                    self.spawn_impact_particles(ix, iy, color)
+
                     
         # Update local states for next callback
         self.active_projectile_ids = current_ids
@@ -152,25 +137,6 @@ class PygameVisualizer(Node):
             for p in msg.projectiles
         ]
 
-    def spawn_exhaust_particles(self):
-        rear_x = self.x - 0.2 * math.cos(self.theta)
-        rear_y = self.y - 0.2 * math.sin(self.theta)
-        
-        for _ in range(2):
-            vx = -0.5 * math.cos(self.theta) + random.uniform(-0.2, 0.2)
-            vy = -0.5 * math.sin(self.theta) + random.uniform(-0.2, 0.2)
-            self.particles.append({
-                'x': rear_x,
-                'y': rear_y,
-                'vx': vx,
-                'vy': vy,
-                'radius': random.randint(4, 8),
-                'color': (80 + random.randint(0, 30), 120 + random.randint(0, 30), 200 + random.randint(0, 50)),
-                'alpha': 180.0,
-                'decay': 350.0,
-                'size_decay': 4.0
-            })
-
     def spawn_flash_particles(self, px, py, angle, color):
         for _ in range(8):
             spread = angle + random.uniform(-0.4, 0.4)
@@ -187,21 +153,6 @@ class PygameVisualizer(Node):
                 'size_decay': 15.0
             })
 
-    def spawn_impact_particles(self, px, py, color):
-        for _ in range(15):
-            angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(1.5, 4.0)
-            self.particles.append({
-                'x': px,
-                'y': py,
-                'vx': speed * math.cos(angle),
-                'vy': speed * math.sin(angle),
-                'radius': random.randint(2, 5),
-                'color': color,
-                'alpha': 255.0,
-                'decay': 800.0,
-                'size_decay': 8.0
-            })
 
     def to_screen(self, x, y):
         px = self.cx + int(x * self.scale)
@@ -367,11 +318,11 @@ class PygameVisualizer(Node):
             pygame.draw.circle(chassis_surf, (120, 120, 120), (58, 40), 3)
             pygame.draw.circle(chassis_surf, (120, 120, 120), (22, 40), 3)
             # Chassis Box
-            pygame.draw.rect(chassis_surf, (0, 102, 204), (20, 25, 40, 30))
+            pygame.draw.rect(chassis_surf, (180, 220, 255), (20, 25, 40, 30))
             pygame.draw.rect(chassis_surf, (0, 246, 255), (20, 25, 40, 30), 2)
             # Cover plate
-            pygame.draw.rect(chassis_surf, (70, 70, 70), (22, 27, 36, 26))
-            pygame.draw.rect(chassis_surf, (150, 150, 150), (22, 27, 36, 26), 1)
+            pygame.draw.rect(chassis_surf, (220, 235, 250), (22, 27, 36, 26))
+            pygame.draw.rect(chassis_surf, (255, 255, 255), (22, 27, 36, 26), 1)
             
             rotated_chassis = pygame.transform.rotate(chassis_surf, math.degrees(self.theta))
             chassis_rect = rotated_chassis.get_rect(center=(robot_px, robot_py))
