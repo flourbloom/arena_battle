@@ -6,6 +6,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotCombatCommand.msg"
+  "msg/Projectile.msg"
+  "msg/RobotState.msg"
 )
 
 ament_package()
