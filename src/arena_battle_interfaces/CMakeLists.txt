@@ -8,6 +8,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RobotCombatCommand.msg"
   "msg/Projectile.msg"
   "msg/RobotState.msg"
+  "msg/GameState.msg"
 )
 
 ament_package()

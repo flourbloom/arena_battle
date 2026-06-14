@@ -1,6 +1,6 @@
 # Launch and Operation Guide
 
-Follow these steps to build, source, launch, and control the Arena Battle Robot simulation.
+Follow these steps to build, source, launch, and control the Arena Battle Robot simulation in its decentralized 2-player mode.
 
 ---
 
@@ -14,7 +14,7 @@ Ensure you have ROS 2 Humble installed, along with the visualizer dependencies:
    sudo apt install ros-humble-desktop
    ```
 2. **Pygame library**:
-   Install it within your project virtual environment (or system python if you are not using one):
+   Install it within your project:
    ```bash
    pip install pygame
    ```
@@ -23,7 +23,7 @@ Ensure you have ROS 2 Humble installed, along with the visualizer dependencies:
 
 ## 🛠️ Building the Workspace
 
-Always navigate to the root directory of your workspace (`~/arena_battle`) to clean and build the packages:
+Always navigate to the root directory of your workspace (`~/arena_battle`) to build the packages:
 
 1. **Clean previous builds** (recommended for fresh compiles):
    ```bash
@@ -40,51 +40,58 @@ Always navigate to the root directory of your workspace (`~/arena_battle`) to cl
 
 ## 🚀 Sourcing and Launching
 
-To run ROS 2 commands, the build environment must be sourced in **every new terminal** you use.
-
-### Step 1: Source the Build Environment
+To run ROS 2 commands, the build environment must be sourced in **every new terminal** you use:
 ```bash
 source ~/arena_battle/install/setup.bash
 ```
 
-### Step 2: Launch the Simulator
-Launch the game client (`pygame_visualizer`) and game server (`game_logic`) nodes:
+### Step 1: Launch the Server & Visualizers
+In your first terminal, launch the `game_state_manager` physics engine and both player's visualizer windows:
 ```bash
 ros2 launch arena_battle arena_battle.launch.py
 ```
-
-A Pygame window will open, showing the cyber dark-blue circular arena, your blue robot chassis, red weapon turret, and HUD panels.
-
----
-
-## 🎮 Controls (Pygame Window)
-
-When the Pygame visualizer window is selected and active, use the following controls:
-
-| Control | Action | Description |
-| :--- | :--- | :--- |
-| **`W` / `S`** or **Up / Down Arrows** | Move Forward / Backward | Moves the robot body inside the arena boundary |
-| **`A` / `D`** or **Left / Right Arrows** | Rotate Chassis Left / Right | Turns the robot heading |
-| **Mouse Motion** | Aim Turret | Rotates the turret barrel toward your cursor |
-| **Left Click** or **`Space`** | Shoot | Fires a orange projectile (costs 1 ammo; gains 10 score on wall hit) |
-| **`Q`** | Activate Shield | Triggers a protective cyan energy bubble (costs 30 shield energy) |
-| **`E`** | Radial Special | Fires an 8-way special cyan projectile attack (costs 5 ammo) |
-| **`ESC`** | Exit Simulator | Safely closes the visualizer window and shuts down the node |
+*This will open two Pygame GUI windows (Player 1 and Player 2). In this version, these windows are **pure listeners** and only display the battle state. They do not capture mouse/keyboard inputs directly.*
 
 ---
 
-## ⌨️ Alternative Controller (Terminal-based)
+## 🎮 Playing the Game (Teleop Terminals)
 
-If you prefer to input commands from a terminal window rather than Pygame directly:
+To control the robots, you must run the teleop input nodes in separate terminal windows (one for each player).
 
-1. Leave the main launch running in your first terminal.
-2. Open a **new terminal**.
-3. Source the workspace:
+### Control Player 1 (Cyan Robot)
+1. Open a **new terminal**.
+2. Source the build:
    ```bash
    source ~/arena_battle/install/setup.bash
    ```
-4. Run the keyboard controller node:
+3. Run the controller in Player 1's namespace:
    ```bash
-   ros2 run arena_battle keyboard_controller
+   ros2 run arena_battle teleop_control --ros-args -r __ns:=/p1
    ```
-   *Note: Press `W`/`A`/`S`/`D` to move, `Space` to shoot, `Q` for shield, and `E` for special attack. Focus must be on this terminal window for keys to register.*
+
+### Control Player 2 (Magenta Robot)
+1. Open a **second new terminal**.
+2. Source the build:
+   ```bash
+   source ~/arena_battle/install/setup.bash
+   ```
+3. Run the controller in Player 2's namespace:
+   ```bash
+   ros2 run arena_battle teleop_control --ros-args -r __ns:=/p2
+   ```
+
+---
+
+## ⌨️ Keyboard Mappings (Active in Teleop Terminals)
+
+Keep your keyboard focus inside the respective player's terminal console. The controls are:
+
+| Key | Action | Description |
+| :--- | :--- | :--- |
+| **`W` / `S`** | Move Forward / Backward | Controls robot chassis speed. Stops moving when you let go of the keys. |
+| **`A` / `D`** | Rotate Base Left / Right | Turns the robot chassis direction. |
+| **`J` / `L`** | Rotate Turret Left / Right | Rotates the turret barrel independently to aim. |
+| **`Space`** | Shoot | Fires a standard projectile (costs 1 ammo). |
+| **`Q`** | Activate Shield | Deploys a temporary protective shield bubble (costs 30 shield energy). |
+| **`E`** | Special Attack | Fires an 8-way special radial projectile attack (costs 5 ammo). |
+| **`Ctrl+C`** | Exit | Safely closes the controller node and restores normal terminal output. |

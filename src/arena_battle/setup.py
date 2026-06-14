@@ -22,9 +22,9 @@ setup(
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
-            'keyboard_controller = arena_battle.keyboard_controller:main',
             'game_logic = arena_battle.game_logic:main',
             'pygame_visualizer = arena_battle.pygame_visualizer:main',
+            'teleop_control = arena_battle.teleop_control:main',
         ],
     },
 )

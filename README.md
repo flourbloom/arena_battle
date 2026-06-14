@@ -1,6 +1,6 @@
 # Arena Battle Robot Game (ROS 2)
 
-An interactive, 2D robot combat simulator built on ROS 2 (Humble) utilizing a clean **Model-View-Controller (MVC)** architectural pattern. 
+An interactive, multi-device 2D robot combat simulator built on ROS 2 (Humble) utilizing a clean, decoupled **Model-View-Controller (MVC)** architectural pattern. 
 
 The project demonstrates custom ROS 2 message definition, nested message structures, multi-node topic communication, and real-time interactive visualization using Python and Pygame.
 
@@ -12,22 +12,24 @@ The application is split into separate ROS nodes representing the Model, View, a
 
 ```mermaid
 graph TD
-    subgraph Controller [Controller / Input Layer]
-        PygameInput[Pygame Keyboard/Mouse Input]
-        TerminalInput[Terminal keyboard_controller Node]
+    subgraph Player1 [Player 1 / Device A]
+        P1_Teleop[p1/teleop_control Node]
+        P1_View[pygame_visualizer_p1 Node]
     end
 
-    subgraph Model [Model / Physics & State Layer]
-        GameLogic[game_logic Node]
+    subgraph Server [Central Server / Device B]
+        GSM[game_state_manager Node]
     end
 
-    subgraph View [View / Visuals Layer]
-        PygameVisualizer[pygame_visualizer Node]
+    subgraph Player2 [Player 2 / Device C]
+        P2_Teleop[p2/teleop_control Node]
+        P2_View[pygame_visualizer_p2 Node]
     end
 
-    PygameInput -- "/robot_command (RobotCombatCommand)" --> GameLogic
-    TerminalInput -- "/robot_command (RobotCombatCommand)" --> GameLogic
-    GameLogic -- "/robot_state (RobotState)" --> PygameVisualizer
+    P1_Teleop -- "/p1/robot_command" --> GSM
+    P2_Teleop -- "/p2/robot_command" --> GSM
+    GSM -- "/game_state" --> P1_View
+    GSM -- "/game_state" --> P2_View
 ```
 
 ---
@@ -36,35 +38,23 @@ graph TD
 
 ### 1. The ROS 2 Nodes (Who they are & What they do)
 
-*   **`game_logic`** (Model / State Node)
-    *   **Defined in**: [game_logic.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/game_logic.py) (inside the `arena_battle` package).
-    *   **Role**: Acts as the game server. It runs the physics engine and tracks all global game states.
-    *   **Logic**:
-        *   Receives movement commands and maps coordinate adjustments.
-        *   Keeps the robot inside the circular boundary (checks bounds).
-        *   Fires projectiles and updates their positions.
-        *   Tracks player health, shield durations, score, and ammo.
-        *   Runs an update loop at **50Hz** to publish the current state.
-    *   **Subscribes to**: `/robot_command`
-    *   **Publishes to**: `/robot_state`
+*   **`game_state_manager`** (Model / State Server Node)
+    *   **Defined in**: [game_logic.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/game_logic.py).
+    *   **Role**: Acts as the game server. It runs the physics engine, tracks all global game states, handles boundaries, resolves robot-to-robot pushing collisions, and processes projectile damage.
+    *   **Subscribes to**: `/p1/robot_command` and `/p2/robot_command`.
+    *   **Publishes to**: `/game_state`.
 
-*   **`pygame_visualizer`** (View & GUI Controller Node)
-    *   **Defined in**: [pygame_visualizer.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/pygame_visualizer.py) (inside the `arena_battle` package).
-    *   **Role**: Acts as the game client and main user interface.
-    *   **Logic**:
-        *   **View**: Receives `/robot_state` and draws the robot chassis, rotating turret, active shield, moving projectiles, score, HP, and ammo panels.
-        *   **Local Visuals**: Spawns muzzle flashes and wall impact explosions by monitoring when new projectiles appear or disappear from the state.
-        *   **Controller**: Captures keyboard (`W`/`A`/`S`/`D`/`Space`/`Q`/`E`) and mouse movement/clicking events within the GUI window and publishes them.
-    *   **Subscribes to**: `/robot_state`
-    *   **Publishes to**: `/robot_command`
+*   **`pygame_visualizer`** (View / Pure Renderer Node)
+    *   **Defined in**: [pygame_visualizer.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/pygame_visualizer.py).
+    *   **Role**: A pure rendering GUI. It displays the arena, active robots, particles, projectles, and a side-by-side dashboard HUD. It does not handle user keyboard inputs or publish commands directly.
+    *   **Subscribes to**: `/game_state`.
+    *   **Publishes to**: *None*.
 
-*   **`keyboard_controller`** (Alternate Controller Node)
-    *   **Defined in**: [keyboard_controller.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/keyboard_controller.py) (inside the `arena_battle` package).
-    *   **Role**: Acts as a terminal-based controller (optional, runs in a separate terminal).
-    *   **Logic**:
-        *   Reads raw character-by-character key presses from the terminal stdin and publishes command events.
-    *   **Subscribes to**: *None*
-    *   **Publishes to**: `/robot_command`
+*   **`teleop_control`** (Controller / Terminal Input Node)
+    *   **Defined in**: [teleop_control.py](file:///home/kolboth/arena_battle/src/arena_battle/arena_battle/teleop_control.py).
+    *   **Role**: Runs inside the console terminal. It reads raw character-by-character key presses from the terminal stdin and publishes control commands.
+    *   **Subscribes to**: *None*.
+    *   **Publishes to**: `/robot_command` (automatically remapped to `/p1/robot_command` or `/p2/robot_command` depending on the namespace).
 
 ---
 
@@ -75,53 +65,55 @@ All custom interfaces are defined inside the **`arena_battle_interfaces`** packa
 *   **`RobotCombatCommand`**
     *   **File**: [RobotCombatCommand.msg](file:///home/kolboth/arena_battle/src/arena_battle_interfaces/msg/RobotCombatCommand.msg)
     *   **Fields**:
-        *   `float32 linear_velocity` / `float32 angular_velocity` (move commands)
+        *   `float32 linear_velocity` / `float32 angular_velocity` (movement commands)
         *   `bool shoot` / `bool shield` / `uint8 weapon_type` (combat actions)
-        *   `float32 turret_angle` (aim commands)
-    *   **Who uses it**: Published by `pygame_visualizer` or `keyboard_controller` and subscribed to by `game_logic`.
+        *   `float32 turret_angle` (absolute aim angle relative to the chassis)
 
 *   **`Projectile`**
     *   **File**: [Projectile.msg](file:///home/kolboth/arena_battle/src/arena_battle_interfaces/msg/Projectile.msg)
     *   **Fields**:
         *   `int32 id` (unique identifier)
-        *   `float32 x` / `float32 y` (position coordinates)
-        *   `float32 vx` / `float32 yv` (velocity components)
+        *   `float32 x` / `float32 y` / `float32 vx` / `float32 vy` (coordinates and speeds)
         *   `uint8 type` (0 = Normal, 1 = Special attack)
-    *   **Who uses it**: Nested as an array inside `RobotState.msg` to pass projectile details from the Model to the View.
+        *   `uint8 owner` (1 = Player 1, 2 = Player 2)
 
 *   **`RobotState`**
     *   **File**: [RobotState.msg](file:///home/kolboth/arena_battle/src/arena_battle_interfaces/msg/RobotState.msg)
     *   **Fields**:
         *   `float32 x` / `float32 y` / `float32 theta` (robot pose)
         *   `float32 turret_angle` (aim joint state)
-        *   `int32 health` / `int32 score` / `int32 ammo` (game statistics)
+        *   `int32 health` / `int32 score` / `int32 ammo` (statistics)
         *   `bool shield_active` / `float32 shield_energy` (defensive status)
-        *   `bool game_over` / `float32 time_elapsed` (session parameters)
-        *   `Projectile[] projectiles` (active projectile list)
-    *   **Who uses it**: Published by `game_logic` and subscribed to by `pygame_visualizer`.
+
+*   **`GameState`**
+    *   **File**: [GameState.msg](file:///home/kolboth/arena_battle/src/arena_battle_interfaces/msg/GameState.msg)
+    *   **Fields**:
+        *   `RobotState player1` / `RobotState player2` (individual player statuses)
+        *   `Projectile[] projectiles` (list of active projectiles in the arena)
+        *   `bool game_over` / `float32 time_elapsed` (global session parameters)
 
 ---
 
 ## 🔄 Execution Under the Hood (Step-by-Step Flow)
 
 ```text
-[User presses 'Space' in Pygame GUI]
-               │
-               ▼
-1. pygame_visualizer publishes `RobotCombatCommand` (with shoot=True) to `/robot_command`
-               │
-               ▼
-2. game_logic receives the command, checks ammo, decrements it, and spawns a projectile dict
-               │
-               ▼
-3. game_logic physics loop (50Hz) moves the projectile coordinates and compiles `RobotState`
-               │
-               ▼
-4. game_logic publishes the compiled `RobotState` (including the new Projectile) to `/robot_state`
-               │
-               ▼
-5. pygame_visualizer receives the state, detects a new projectile ID, spawns a muzzle flash, 
-   and draws the projectile moving smoothly on screen
+[User presses 'Space' in Player 1 Terminal Node]
+                     │
+                     ▼
+1. p1/teleop_control publishes `RobotCombatCommand` (shoot=True) to `/p1/robot_command`
+                     │
+                     ▼
+2. game_state_manager receives the command, decrements Player 1 ammo, and spawns a projectile
+                     │
+                     ▼
+3. game_state_manager physics loop (50Hz) updates positions and compiles `GameState` message
+                     │
+                     ▼
+4. game_state_manager publishes `GameState` to `/game_state`
+                     │
+                     ▼
+5. pygame_visualizer_p1 and pygame_visualizer_p2 receive the state, update HUDs, 
+   spawn muzzle flash particles, and draw moving projectiles on both screens
 ```
 
 ---
@@ -135,20 +127,20 @@ arena_battle/
 │   │   ├── msg/
 │   │   │   ├── Projectile.msg        # Projectile definition
 │   │   │   ├── RobotCombatCommand.msg# User commands definition
-│   │   │   └── RobotState.msg        # Global game state definition
+│   │   │   ├── RobotState.msg        # Single robot state definition
+│   │   │   └── GameState.msg         # Global game state definition
 │   │   └── CMakeLists.txt            # Interface compiler configuration
 │   │
 │   └── arena_battle/                 # Main Python package
 │       ├── arena_battle/
-│       │   ├── game_logic.py         # State/Model node
-│       │   ├── pygame_visualizer.py  # GUI View/Controller node
-│       │   └── keyboard_controller.py# Optional terminal controller node
+│       │   ├── game_logic.py         # State Manager node (server)
+│       │   ├── pygame_visualizer.py  # GUI View node (pure rendering client)
+│       │   └── teleop_control.py     # Terminal Controller node (client input)
 │       ├── launch/
-│       │   └── arena_battle.launch.py# Node launcher script
+│       │   └── arena_battle.launch.py# Launch script for server & visualizers
 │       └── setup.py                  # Package installation file
 │
-├── venv/                             # Python Virtual Environment
-├── README.md                         # Main description (This file)
+│── README.md                         # Main description (This file)
 └── launch.md                         # Build & Launch instructions
 ```
 
