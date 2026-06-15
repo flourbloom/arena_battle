@@ -15,24 +15,33 @@ if [ -f /opt/ros/humble/setup.bash ]; then
     source /opt/ros/humble/setup.bash
 fi
 
-# Build if build/install directories don't exist
+# Selective cleanup: only kill the type of process we are about to start
+if [ "$1" = "server" ]; then
+    echo "[Cleanup] Killing any existing game_logic server processes..."
+    pkill -9 -f "arena_battle.*game_logic" 2>/dev/null || true
+else
+    echo "[Cleanup] Killing any existing pygame_visualizer client processes..."
+    pkill -9 -f "arena_battle.*pygame_visualizer" 2>/dev/null || true
+fi
+sleep 0.3
+
+# Build workspace (only if needed)
 if [ ! -d "install" ] || [ ! -f "install/setup.bash" ]; then
-    echo "First time build. Running colcon build..."
+    echo "[Build] First time build. Running colcon build..."
+    colcon build --symlink-install
+else
+    echo "[Build] Incremental build..."
     colcon build --symlink-install
 fi
 
 source install/setup.bash
 
+echo "[Info] ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
+
 if [ "$1" = "server" ]; then
-    echo "Clearing any orphaned game logic servers..."
-    pkill -f game_logic 2>/dev/null || true
-    sleep 0.5
-    echo "Starting Game Logic Server..."
+    echo "[Start] Launching Game Logic Server..."
     ros2 run arena_battle game_logic
 else
-    echo "Clearing any orphaned client visualizers..."
-    pkill -f pygame_visualizer 2>/dev/null || true
-    sleep 0.5
-    echo "Starting Arena Battle Client..."
+    echo "[Start] Launching Arena Battle Client..."
     ros2 run arena_battle pygame_visualizer
 fi

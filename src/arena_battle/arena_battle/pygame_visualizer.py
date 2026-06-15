@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 
 import sys
+import os
 import math
 import random
 import time
 import json
 import subprocess
-import threading
 import atexit
-import signal
 import pygame
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from arena_battle_interfaces.msg import GameState, RobotState, RobotCombatCommand
 from std_msgs.msg import String
 
@@ -81,19 +79,12 @@ class PygameVisualizer(Node):
         self.projectiles = []
         self.active_projectile_ids = set()
         
-        # Best-effort QoS profile with history queue depth of 1 (forces latest packets only, zero buffering)
-        self.game_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
-            history=HistoryPolicy.KEEP_LAST,
-            depth=1
-        )
-        
-        # ROS 2 Subscriptions and Publishers
+        # ROS 2 Subscriptions and Publishers (standard QoS depth 10)
         self.state_sub = self.create_subscription(
             GameState,
             '/game_state',
             self.state_callback,
-            self.game_qos
+            10
         )
         
         self.lobby_pub = self.create_publisher(String, '/lobby_advertisement', 10)
@@ -102,21 +93,15 @@ class PygameVisualizer(Node):
         self.join_pub = self.create_publisher(String, '/lobby_join_request', 10)
         self.join_sub = self.create_subscription(String, '/lobby_join_request', self.lobby_join_callback, 10)
         
-        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, '/p1/robot_command', self.game_qos)
-        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, '/p2/robot_command', self.game_qos)
+        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, '/p1/robot_command', 10)
+        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, '/p2/robot_command', 10)
         
         # Timers
-        self.cmd_timer = self.create_timer(0.02, self.publish_commands) # 50Hz (matching physics loop rate)
+        self.cmd_timer = self.create_timer(0.02, self.publish_commands) # 50Hz
         self.lobby_timer = self.create_timer(1.0, self.publish_lobby_advertisement) # 1Hz
         
         # Setup clean exit hooks
         atexit.register(self.stop_game_server)
-        signal.signal(signal.SIGINT, lambda sig, frame: sys.exit(0))
-        signal.signal(signal.SIGTERM, lambda sig, frame: sys.exit(0))
-        
-        # Start background ROS 2 spin loop thread
-        self.ros_spin_thread = threading.Thread(target=self.ros_spin_loop, daemon=True)
-        self.ros_spin_thread.start()
         
         # Initialize Pygame
         pygame.init()
@@ -151,15 +136,8 @@ class PygameVisualizer(Node):
             self.font_title = pygame.font.Font(None, 22)
             self.font_hud = pygame.font.Font(None, 18)
             self.font_controls = pygame.font.Font(None, 16)
-        import os
         domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
         self.get_logger().info(f"Pygame Unified Client Initialized! (ROS_DOMAIN_ID: {domain_id})")
-
-    def ros_spin_loop(self):
-        try:
-            rclpy.spin(self)
-        except Exception:
-            pass
 
     def start_game_server(self):
         self.stop_game_server()
@@ -814,6 +792,8 @@ class PygameVisualizer(Node):
     def run(self):
         running = True
         while running and rclpy.ok():
+            # Process ROS 2 callbacks in a non-blocking manner
+            rclpy.spin_once(self, timeout_sec=0.0)
             dt = self.clock.tick(60) / 1000.0
             
             # Subsystem housekeepings
