@@ -13,10 +13,13 @@ import rclpy
 from rclpy.node import Node
 from arena_battle_interfaces.msg import GameState, RobotState, RobotCombatCommand
 from std_msgs.msg import String
+import signal
 
 class PygameVisualizer(Node):
     def __init__(self):
-        super().__init__('pygame_node')
+        import uuid
+        node_name = 'pygame_node_' + str(uuid.uuid4())[:8]
+        super().__init__(node_name)
         
         # Declare player_id parameter just in case
         self.declare_parameter('player_id', 1)
@@ -39,6 +42,8 @@ class PygameVisualizer(Node):
         self.selected_lobby_id = None
         self.lobby_data = {}
         self.server_process = None
+        self.server_detected = False
+        self.server_check_failed_timer = 0.0
         
         # Keyboard Control States (P1)
         self.p1_linear = 0.0
@@ -80,6 +85,8 @@ class PygameVisualizer(Node):
 
         self.game_over = False
         self.time_elapsed = 0.0
+        self.paused = False
+        self.pause_modal = False
         
         # Particles & projectiles
         self.particles = []
@@ -87,24 +94,22 @@ class PygameVisualizer(Node):
         self.active_projectile_ids = set()
         
         # ROS 2 Subscriptions and Publishers (standard QoS depth 10)
-        self.state_sub = self.create_subscription(
-            GameState,
-            '/global_game_state',
-            self.state_callback,
-            10
-        )
-        
+        # Lobby topics remain global
+        self.state_sub = None
+
         self.lobby_pub = self.create_publisher(String, '/lobby_advertisement', 10)
         self.lobby_sub = self.create_subscription(String, '/lobby_advertisement', self.lobby_ad_callback, 10)
-        
+
         self.join_pub = self.create_publisher(String, '/lobby_join_request', 10)
         self.join_sub = self.create_subscription(String, '/lobby_join_request', self.lobby_join_callback, 10)
-        
-        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, '/p1/command', 10)
-        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, '/p2/command', 10)
+
+        # Command publishers will be created per-match when gameplay starts
+        self.p1_cmd_pub = None
+        self.p2_cmd_pub = None
+        self.current_match_id = None
         
         # Timers
-        self.cmd_timer = self.create_timer(0.02, self.publish_commands) # 50Hz
+        self.cmd_timer = self.create_timer(0.01, self.publish_commands) # 100Hz
         self.lobby_timer = self.create_timer(1.0, self.publish_lobby_advertisement) # 1Hz
         
         # Setup clean exit hooks
@@ -146,14 +151,21 @@ class PygameVisualizer(Node):
         domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
         self.get_logger().info(f"Pygame Unified Client Initialized! (ROS_DOMAIN_ID: {domain_id})")
 
-    def start_game_server(self):
+    def start_game_server(self, force=False):
+        # Only spawn a local server if explicitly allowed by the launcher or forced (e.g. local match)
+        allow = os.environ.get('ARENA_ALLOW_LOCAL_SERVER', '0')
+        if not force and allow != '1':
+            self.get_logger().info("Local server auto-start disabled by launcher; not spawning server.")
+            return
+
         self.stop_game_server()
         self.get_logger().info("Spawning Local Game Logic Server...")
         try:
             self.server_process = subprocess.Popen(
                 ["ros2", "run", "arena_battle", "game_logic"],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                preexec_fn=os.setsid
             )
         except Exception as e:
             self.get_logger().error(f"Failed to start local server process: {e}")
@@ -161,23 +173,80 @@ class PygameVisualizer(Node):
     def stop_game_server(self):
         if self.server_process is not None:
             self.get_logger().info("Terminating Local Game Logic Server...")
-            self.server_process.terminate()
             try:
+                pgid = os.getpgid(self.server_process.pid)
+                os.killpg(pgid, signal.SIGTERM)
                 self.server_process.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
-                self.server_process.kill()
+            except Exception as e:
+                self.get_logger().error(f"Error terminating local server process group: {e}")
+                try:
+                    self.server_process.terminate()
+                    self.server_process.wait(timeout=0.5)
+                except Exception:
+                    try:
+                        self.server_process.kill()
+                    except Exception:
+                        pass
             self.server_process = None
+
+    def clean_gameplay_data(self):
+        self.particles.clear()
+        self.projectiles.clear()
+        self.active_projectile_ids.clear()
+        
+        # Reset poses and combat stats to defaults
+        self.p1_x = -1.5
+        self.p1_y = 0.0
+        self.p1_theta = 0.0
+        self.p1_turret_angle = 0.0
+        self.p1_turret_angle_received = 0.0
+        self.p1_health = 100
+        self.p1_shield_active = False
+        self.p1_shield_energy = 100.0
+        self.p1_score = 0
+        self.p1_ammo = 10
+        
+        self.p2_x = 1.5
+        self.p2_y = 0.0
+        self.p2_theta = math.pi
+        self.p2_turret_angle = 0.0
+        self.p2_turret_angle_received = 0.0
+        self.p2_health = 100
+        self.p2_shield_active = False
+        self.p2_shield_energy = 100.0
+        self.p2_score = 0
+        self.p2_ammo = 10
+        
+        self.game_over = False
+        self.time_elapsed = 0.0
 
     def publish_lobby_advertisement(self):
         if self.state not in ["LOBBY_HOST", "GAMEPLAY"] or not self.is_network:
             return
             
+        if self.state == "GAMEPLAY":
+            if self.lobby_data.get("status") == "end":
+                status_val = "end"
+            elif self.game_over:
+                status_val = "game_over"
+            elif self.paused:
+                status_val = "paused"
+            else:
+                status_val = "playing"
+        else:
+            status_val = self.lobby_data.get("status", "waiting")
+
+        # Guest (player_id != 1) is only allowed to advertise if it is signaling match termination ('end')
+        if self.player_id != 1 and status_val != "end":
+            return
+
         lobby_info = {
             "host_id": self.host_id,
             "host_name": f"{self.player_name}'s Arena",
             "player1_name": self.player_name,
             "player2_name": self.lobby_data.get("player2_name", ""),
-            "status": "playing" if self.state == "GAMEPLAY" else self.lobby_data.get("status", "waiting")
+            "status": status_val,
+            "match_id": (('m' + str(self.current_match_id)) if (self.current_match_id and str(self.current_match_id)[0].isdigit()) else self.current_match_id)
         }
         
         msg = String()
@@ -193,11 +262,53 @@ class PygameVisualizer(Node):
                 
             self.active_lobbies[hid] = (data, time.time())
             
+            # If currently in gameplay and this advert is for our match, handle pause/unpause/end
+            status = data.get('status')
+            mid = data.get('match_id')
+            if self.state == 'GAMEPLAY' and mid and self.current_match_id and mid == self.current_match_id:
+                if status == 'paused':
+                    self.get_logger().info("Match paused by remote player.")
+                    self.paused = True
+                    self.pause_modal = True
+                elif status == 'playing':
+                    self.get_logger().info("Match resumed by remote player.")
+                    self.paused = False
+                    self.pause_modal = False
+                elif status == 'end':
+                    self.get_logger().info("Match ended by remote player.")
+                    self.clean_gameplay_data()
+                    if not self.is_network:
+                        self.stop_game_server()
+                    self.state = 'MENU'
+                    self.paused = False
+                    self.pause_modal = False
+                    self.current_match_id = None
+
             if self.state == "LOBBY_GUEST" and self.selected_lobby_id == hid:
                 self.lobby_data = data
-                if data.get("status") == "playing":
+                status = data.get('status')
+                mid = data.get('match_id')
+                if status == 'playing':
                     self.get_logger().info("Lobby status changed to playing! Entering game...")
+                    if mid:
+                        self.current_match_id = mid
+                    self.setup_match_topics(self.current_match_id or ("local_" + str(random.randint(1000,9999))))
+                    self.clean_gameplay_data()
                     self.state = "GAMEPLAY"
+                    self.paused = False
+                    self.pause_modal = False
+                elif status == 'paused':
+                    self.get_logger().info("Lobby status changed to paused! Entering game...")
+                    if mid:
+                        self.current_match_id = mid
+                    self.setup_match_topics(self.current_match_id or ("local_" + str(random.randint(1000,9999))))
+                    self.clean_gameplay_data()
+                    self.state = "GAMEPLAY"
+                    self.paused = True
+                    self.pause_modal = True
+                elif status in ['waiting', 'ready']:
+                    # lobby update, keep state
+                    pass
         except Exception:
             pass
 
@@ -243,6 +354,53 @@ class PygameVisualizer(Node):
         msg.data = json.dumps(req)
         self.join_pub.publish(msg)
 
+    def setup_match_topics(self, matchid):
+        # Tear down existing game topics
+        try:
+            if self.state_sub is not None:
+                try:
+                    self.destroy_subscription(self.state_sub)
+                except Exception:
+                    pass
+                self.state_sub = None
+        except Exception:
+            pass
+
+        try:
+            if self.p1_cmd_pub is not None:
+                try:
+                    self.destroy_publisher(self.p1_cmd_pub)
+                except Exception:
+                    pass
+                self.p1_cmd_pub = None
+        except Exception:
+            pass
+
+        try:
+            if self.p2_cmd_pub is not None:
+                try:
+                    self.destroy_publisher(self.p2_cmd_pub)
+                except Exception:
+                    pass
+                self.p2_cmd_pub = None
+        except Exception:
+            pass
+
+        # Create namespaced topics for this match
+        self.current_match_id = matchid
+        if matchid is None:
+            state_topic = '/global_game_state'
+            p1_cmd_topic = '/p1/command'
+            p2_cmd_topic = '/p2/command'
+        else:
+            state_topic = f'/match/{matchid}/game_state'
+            p1_cmd_topic = f'/match/{matchid}/p1/command'
+            p2_cmd_topic = f'/match/{matchid}/p2/command'
+
+        self.state_sub = self.create_subscription(GameState, state_topic, self.state_callback, 10)
+        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, p1_cmd_topic, 10)
+        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, p2_cmd_topic, 10)
+
     def leave_lobby(self):
         if self.selected_lobby_id:
             req = {
@@ -257,29 +415,14 @@ class PygameVisualizer(Node):
         self.state = "LOBBY_JOIN"
         self.selected_lobby_id = None
         self.lobby_data = {}
+        self.current_match_id = None
 
     def publish_commands(self):
         if self.state != "GAMEPLAY":
             return
             
-        # P1 / Host local update and publish
+        # P1 / Host local publish
         if not self.is_network or self.player_id == 1:
-            # Client-side prediction for Player 1
-            self.p1_theta += self.p1_angular * 0.1
-            new_x = self.p1_x + self.p1_linear * math.cos(self.p1_theta) * 0.2
-            new_y = self.p1_y + self.p1_linear * math.sin(self.p1_theta) * 0.2
-            
-            # Circular arena boundary constraint
-            dist = math.sqrt(new_x**2 + new_y**2)
-            if dist > 3.25:
-                self.p1_x = 3.25 * new_x / dist
-                self.p1_y = 3.25 * new_y / dist
-            else:
-                self.p1_x = new_x
-                self.p1_y = new_y
-            
-            self.p1_turret_angle_received = self.p1_turret_angle
-            
             msg = RobotCombatCommand()
             msg.linear_velocity = float(self.p1_linear)
             msg.angular_velocity = float(self.p1_angular)
@@ -287,34 +430,16 @@ class PygameVisualizer(Node):
             msg.shoot = bool(self.p1_shoot)
             msg.shield = bool(self.p1_shield)
             msg.weapon_type = int(self.p1_weapon_type)
-            msg.x = float(self.p1_x)
-            msg.y = float(self.p1_y)
-            msg.theta = float(self.p1_theta)
-            self.p1_cmd_pub.publish(msg)
+            if self.p1_cmd_pub:
+                self.p1_cmd_pub.publish(msg)
             
             # Reset triggers
             self.p1_shoot = False
             self.p1_shield = False
             self.p1_weapon_type = 0
             
-        # P2 / Guest local update and publish
+        # P2 / Guest local publish
         if not self.is_network or self.player_id == 2:
-            # Client-side prediction for Player 2
-            self.p2_theta += self.p2_angular * 0.1
-            new_x = self.p2_x + self.p2_linear * math.cos(self.p2_theta) * 0.2
-            new_y = self.p2_y + self.p2_linear * math.sin(self.p2_theta) * 0.2
-            
-            # Circular arena boundary constraint
-            dist = math.sqrt(new_x**2 + new_y**2)
-            if dist > 3.25:
-                self.p2_x = 3.25 * new_x / dist
-                self.p2_y = 3.25 * new_y / dist
-            else:
-                self.p2_x = new_x
-                self.p2_y = new_y
-            
-            self.p2_turret_angle_received = self.p2_turret_angle
-            
             msg = RobotCombatCommand()
             msg.linear_velocity = float(self.p2_linear)
             msg.angular_velocity = float(self.p2_angular)
@@ -322,53 +447,13 @@ class PygameVisualizer(Node):
             msg.shoot = bool(self.p2_shoot)
             msg.shield = bool(self.p2_shield)
             msg.weapon_type = int(self.p2_weapon_type)
-            msg.x = float(self.p2_x)
-            msg.y = float(self.p2_y)
-            msg.theta = float(self.p2_theta)
-            self.p2_cmd_pub.publish(msg)
+            if self.p2_cmd_pub:
+                self.p2_cmd_pub.publish(msg)
             
             # Reset triggers
             self.p2_shoot = False
             self.p2_shield = False
             self.p2_weapon_type = 0
-
-        # Robot-to-robot collision resolution to match the server physics
-        dx = self.p2_x - self.p1_x
-        dy = self.p2_y - self.p1_y
-        dist = math.sqrt(dx**2 + dy**2)
-        min_dist = 0.5
-        if dist < min_dist:
-            if dist == 0.0:
-                dx = 0.1
-                dy = 0.0
-                dist = 0.1
-            overlap = min_dist - dist
-            push_x = (dx / dist) * (overlap / 2.0)
-            push_y = (dy / dist) * (overlap / 2.0)
-            
-            if not self.is_network:
-                # In local mode, both players are local
-                self.p1_x -= push_x
-                self.p1_y -= push_y
-                self.p2_x += push_x
-                self.p2_y += push_y
-            else:
-                # In network mode, we only push our own local player
-                if self.player_id == 1:
-                    self.p1_x -= push_x
-                    self.p1_y -= push_y
-                else:
-                    self.p2_x += push_x
-                    self.p2_y += push_y
-                    
-            # Clamp back inside boundary if pushed out
-            for prefix in ['p1', 'p2']:
-                x_val = getattr(self, f"{prefix}_x")
-                y_val = getattr(self, f"{prefix}_y")
-                r = math.sqrt(x_val**2 + y_val**2)
-                if r > 3.25:
-                    setattr(self, f"{prefix}_x", 3.25 * x_val / r)
-                    setattr(self, f"{prefix}_y", 3.25 * y_val / r)
 
     def clean_active_lobbies(self):
         now = time.time()
@@ -377,64 +462,28 @@ class PygameVisualizer(Node):
                 del self.active_lobbies[hid]
 
     def state_callback(self, msg):
-        # Update non-pose properties from server (health, shield, score, ammo)
+        # Update Player 1 properties
+        self.p1_x = msg.player1.x
+        self.p1_y = msg.player1.y
+        self.p1_theta = msg.player1.theta
+        self.p1_turret_angle_received = msg.player1.turret_angle
         self.p1_health = msg.player1.health
         self.p1_shield_active = msg.player1.shield_active
         self.p1_shield_energy = msg.player1.shield_energy
         self.p1_score = msg.player1.score
         self.p1_ammo = msg.player1.ammo
         
+        # Update Player 2 properties
+        self.p2_x = msg.player2.x
+        self.p2_y = msg.player2.y
+        self.p2_theta = msg.player2.theta
+        self.p2_turret_angle_received = msg.player2.turret_angle
         self.p2_health = msg.player2.health
         self.p2_shield_active = msg.player2.shield_active
         self.p2_shield_energy = msg.player2.shield_energy
         self.p2_score = msg.player2.score
         self.p2_ammo = msg.player2.ammo
         
-        # Selectively update player poses
-        if self.is_network:
-            if self.player_id == 1:
-                # We are Player 1. Always update Player 2 (remote) pose.
-                self.p2_x = msg.player2.x
-                self.p2_y = msg.player2.y
-                self.p2_theta = msg.player2.theta
-                self.p2_turret_angle_received = msg.player2.turret_angle
-                
-                # Sync local Player 1 pose only at start or game over
-                if msg.time_elapsed < 0.1 or msg.game_over:
-                    self.p1_x = msg.player1.x
-                    self.p1_y = msg.player1.y
-                    self.p1_theta = msg.player1.theta
-                    self.p1_turret_angle = msg.player1.turret_angle
-                    self.p1_turret_angle_received = msg.player1.turret_angle
-            elif self.player_id == 2:
-                # We are Player 2. Always update Player 1 (remote) pose.
-                self.p1_x = msg.player1.x
-                self.p1_y = msg.player1.y
-                self.p1_theta = msg.player1.theta
-                self.p1_turret_angle_received = msg.player1.turret_angle
-                
-                # Sync local Player 2 pose only at start or game over
-                if msg.time_elapsed < 0.1 or msg.game_over:
-                    self.p2_x = msg.player2.x
-                    self.p2_y = msg.player2.y
-                    self.p2_theta = msg.player2.theta
-                    self.p2_turret_angle = msg.player2.turret_angle
-                    self.p2_turret_angle_received = msg.player2.turret_angle
-        else:
-            # Local match - poses updated locally, sync with server only at start or game over
-            if msg.time_elapsed < 0.1 or msg.game_over:
-                self.p1_x = msg.player1.x
-                self.p1_y = msg.player1.y
-                self.p1_theta = msg.player1.theta
-                self.p1_turret_angle = msg.player1.turret_angle
-                self.p1_turret_angle_received = msg.player1.turret_angle
-                
-                self.p2_x = msg.player2.x
-                self.p2_y = msg.player2.y
-                self.p2_theta = msg.player2.theta
-                self.p2_turret_angle = msg.player2.turret_angle
-                self.p2_turret_angle_received = msg.player2.turret_angle
-                
         self.game_over = msg.game_over
         self.time_elapsed = msg.time_elapsed
         
@@ -556,7 +605,10 @@ class PygameVisualizer(Node):
         
         self.draw_button("LOCAL MATCH (1 LAPTOP)", btn_local, (10, 45, 80), (15, 70, 120), (255, 255, 255), btn_local.collidepoint(mx, my))
         self.draw_button("HOST LAN LOBBY", btn_host, (10, 80, 45), (15, 120, 70), (255, 255, 255), btn_host.collidepoint(mx, my))
-        self.draw_button("JOIN LAN LOBBY", btn_join, (80, 10, 80), (120, 15, 120), (255, 255, 255), btn_join.collidepoint(mx, my))
+        if self.server_check_failed_timer > 0.0:
+            self.draw_button("NO SERVER DETECTED!", btn_join, (150, 20, 20), (180, 30, 30), (255, 255, 255), btn_join.collidepoint(mx, my))
+        else:
+            self.draw_button("JOIN LAN LOBBY", btn_join, (80, 10, 80), (120, 15, 120), (255, 255, 255), btn_join.collidepoint(mx, my))
         self.draw_button("EXIT SIMULATION", btn_exit, (80, 15, 15), (120, 20, 20), (255, 255, 255), btn_exit.collidepoint(mx, my))
 
         # Active ROS_DOMAIN_ID display
@@ -866,6 +918,34 @@ class PygameVisualizer(Node):
         self.screen.blit(timer_surf, (self.screen_width // 2 - 60, 20))
         
         # 9. Render Controls Help notice
+        # If paused, render pause UI on top
+        if self.paused:
+            overlay = pygame.Surface((self.screen_width, self.screen_height), pygame.SRCALPHA)
+            overlay.fill((0,0,0,150))
+            self.screen.blit(overlay, (0,0))
+
+            # Modal with buttons for BOTH players
+            modal = pygame.Rect(self.screen_width//2 - 200, self.screen_height//2 - 80, 400, 160)
+            pygame.draw.rect(self.screen, (18,18,30), modal, border_radius=8)
+            pygame.draw.rect(self.screen, (200,200,200), modal, width=2, border_radius=8)
+ 
+            lbl = self.font_menu_title.render("GAME PAUSED", True, (255,255,255))
+            self.screen.blit(lbl, lbl.get_rect(center=(self.screen_width//2, self.screen_height//2 - 30)))
+ 
+            prompt = self.font_menu_button.render("Leaving the match?", True, (200,200,200))
+            self.screen.blit(prompt, prompt.get_rect(center=(self.screen_width//2, self.screen_height//2 + 0)))
+ 
+            # Buttons
+            btn_no = pygame.Rect(self.screen_width//2 - 140, self.screen_height//2 + 40, 120, 36)
+            btn_yes = pygame.Rect(self.screen_width//2 + 20, self.screen_height//2 + 40, 120, 36)
+ 
+            mx, my = pygame.mouse.get_pos()
+            self.draw_button("NO", btn_no, (30,120,60), (40,160,80), (255,255,255), btn_no.collidepoint(mx,my))
+            self.draw_button("YES", btn_yes, (120,20,20), (160,40,40), (255,255,255), btn_yes.collidepoint(mx,my))
+ 
+            # Expose modal button rects for main loop click handling
+            self._pause_btn_no = btn_no
+            self._pause_btn_yes = btn_yes
         ctrl_surf = pygame.Surface((560, 30), pygame.SRCALPHA)
         pygame.draw.rect(ctrl_surf, (0, 0, 10, 180), (0, 0, 560, 30), border_radius=5)
         pygame.draw.rect(ctrl_surf, (150, 150, 150, 100), (0, 0, 560, 30), 1, border_radius=5)
@@ -911,9 +991,22 @@ class PygameVisualizer(Node):
     def run(self):
         running = True
         while running and rclpy.ok():
+            # Periodically check if game server is running (every 1 second)
+            now = time.time()
+            if not hasattr(self, '_last_server_check') or now - self._last_server_check > 1.0:
+                self._last_server_check = now
+                try:
+                    self.server_detected = any(n == 'game_server' or n.endswith('/game_server') for n in self.get_node_names())
+                except Exception:
+                    self.server_detected = False
+
             # Process ROS 2 callbacks in a non-blocking manner
             rclpy.spin_once(self, timeout_sec=0.0)
             dt = self.clock.tick(60) / 1000.0
+            
+            # Decrement warning timer
+            if hasattr(self, 'server_check_failed_timer') and self.server_check_failed_timer > 0.0:
+                self.server_check_failed_timer = max(0.0, self.server_check_failed_timer - dt)
             
             # Subsystem housekeepings
             if self.state == "LOBBY_JOIN":
@@ -944,8 +1037,10 @@ class PygameVisualizer(Node):
                             if btn_local.collidepoint(mx, my):
                                 self.is_network = False
                                 self.player_id = 1
-                                self.start_game_server()
+                                self.start_game_server(force=True)
                                 time.sleep(0.5)
+                                self.setup_match_topics(None)
+                                self.clean_gameplay_data()
                                 self.state = "GAMEPLAY"
                             elif btn_host.collidepoint(mx, my):
                                 self.is_network = True
@@ -955,10 +1050,19 @@ class PygameVisualizer(Node):
                                 self.start_game_server()
                                 self.state = "LOBBY_HOST"
                             elif btn_join.collidepoint(mx, my):
-                                self.is_network = True
-                                self.player_id = 2
-                                self.host_id = "guest_" + str(random.randint(1000, 9999))
-                                self.state = "LOBBY_JOIN"
+                                # Synchronously check if server is running
+                                try:
+                                    self.server_detected = any(n == 'game_server' or n.endswith('/game_server') for n in self.get_node_names())
+                                except Exception:
+                                    self.server_detected = False
+                                    
+                                if self.server_detected:
+                                    self.is_network = True
+                                    self.player_id = 2
+                                    self.host_id = "guest_" + str(random.randint(1000, 9999))
+                                    self.state = "LOBBY_JOIN"
+                                else:
+                                    self.server_check_failed_timer = 1.5
                             elif btn_exit.collidepoint(mx, my):
                                 running = False
                                 
@@ -967,17 +1071,33 @@ class PygameVisualizer(Node):
                             btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
                             
                             if btn_start.collidepoint(mx, my) and self.lobby_data.get("player2_name"):
-                                self.lobby_data["status"] = "playing"
-                                self.publish_lobby_advertisement()
-                                self.state = "GAMEPLAY"
+                                    # Ensure a match_id exists so master and clients can coordinate
+                                    if not self.current_match_id:
+                                        # generate sanitized match id
+                                        mid = str(random.randint(1000, 999999))
+                                        if mid[0].isdigit():
+                                            mid = 'm' + mid
+                                        self.current_match_id = mid
+                                    self.lobby_data["status"] = "playing"
+                                    self.publish_lobby_advertisement()
+                                    self.setup_match_topics(self.current_match_id)
+                                    self.clean_gameplay_data()
+                                    self.state = "GAMEPLAY"
                             elif btn_back.collidepoint(mx, my):
+                                if self.is_network:
+                                    self.lobby_data['status'] = 'end'
+                                    for _ in range(5):
+                                        self.publish_lobby_advertisement()
+                                        time.sleep(0.02)
                                 self.stop_game_server()
                                 self.state = "MENU"
+                                self.current_match_id = None
                                 
                         elif self.state == "LOBBY_JOIN":
                             btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
                             if btn_back.collidepoint(mx, my):
                                 self.state = "MENU"
+                                self.current_match_id = None
                             else:
                                 lobbies = list(self.active_lobbies.values())
                                 for idx, (lobby, _) in enumerate(lobbies[:5]):
@@ -989,29 +1109,70 @@ class PygameVisualizer(Node):
                             btn_leave = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
                             if btn_leave.collidepoint(mx, my):
                                 self.leave_lobby()
+                        elif self.state == "GAMEPLAY" and self.paused:
+                            # check modal buttons
+                            no_rect = getattr(self, '_pause_btn_no', None)
+                            yes_rect = getattr(self, '_pause_btn_yes', None)
+                            if no_rect and no_rect.collidepoint(mx, my):
+                                # Unpause
+                                self.paused = False
+                                self.pause_modal = False
+                                if self.is_network and self.current_match_id:
+                                    self.lobby_data['status'] = 'playing'
+                                    self.publish_lobby_advertisement()
+                            elif yes_rect and yes_rect.collidepoint(mx, my):
+                                # End match for both players
+                                if self.is_network and self.current_match_id:
+                                    self.lobby_data['status'] = 'end'
+                                    for _ in range(5):
+                                        self.publish_lobby_advertisement()
+                                        time.sleep(0.05)
+                                # Clean up local client and leave
+                                self.clean_gameplay_data()
+                                if not self.is_network:
+                                    self.stop_game_server()
+                                self.state = 'MENU'
+                                self.paused = False
+                                self.pause_modal = False
+                                self.current_match_id = None
                                 
                 elif event.type == pygame.KEYDOWN:
                     # Escape behavior context
                     if event.key == pygame.K_ESCAPE:
                         if self.state == "GAMEPLAY":
-                            if self.is_network:
-                                if self.player_id == 1:
-                                    self.state = "LOBBY_HOST"
-                                    self.lobby_data["status"] = "ready"
-                                    self.publish_lobby_advertisement()
-                                else:
-                                    self.leave_lobby()
+                            if self.game_over:
+                                # Return to menu
+                                if self.is_network and self.current_match_id:
+                                    self.lobby_data['status'] = 'end'
+                                    for _ in range(5):
+                                        self.publish_lobby_advertisement()
+                                        time.sleep(0.02)
+                                self.clean_gameplay_data()
+                                if not self.is_network:
+                                    self.stop_game_server()
+                                self.state = 'MENU'
+                                self.paused = False
+                                self.pause_modal = False
+                                self.current_match_id = None
                             else:
-                                self.stop_game_server()
-                                self.state = "MENU"
-                        elif self.state in ["LOBBY_HOST", "LOBBY_JOIN"]:
-                            self.stop_game_server()
-                            self.state = "MENU"
-                        elif self.state == "LOBBY_GUEST":
-                            self.leave_lobby()
+                                if not self.paused:
+                                    # Enter paused modal and notify peers
+                                    self.paused = True
+                                    self.pause_modal = True
+                                    if self.is_network and self.current_match_id:
+                                        self.lobby_data['status'] = 'paused'
+                                        self.publish_lobby_advertisement()
+                                else:
+                                    # If already paused and we are the pauser, ESC unpauses
+                                    if self.pause_modal:
+                                        self.paused = False
+                                        self.pause_modal = False
+                                        if self.is_network and self.current_match_id:
+                                            self.lobby_data['status'] = 'playing'
+                                            self.publish_lobby_advertisement()
                             
                     # Name Input text capture
-                    if self.state == "MENU" and self.name_input_active:
+                    elif self.state == "MENU" and self.name_input_active:
                         if event.key == pygame.K_BACKSPACE:
                             self.player_name = self.player_name[:-1]
                         elif event.key == pygame.K_RETURN:
@@ -1050,7 +1211,7 @@ class PygameVisualizer(Node):
                                 self.p2_weapon_type = 1
 
             # --- Continuous Key Polling for movement (only in Gameplay) ---
-            if self.state == "GAMEPLAY":
+            if self.state == "GAMEPLAY" and not self.paused:
                 keys = pygame.key.get_pressed()
                 
                 # Player 1 Movement (Host / Local P1)
@@ -1063,14 +1224,14 @@ class PygameVisualizer(Node):
                         
                     self.p1_angular = 0.0
                     if keys[pygame.K_a]:
-                        self.p1_angular = 1.0
+                        self.p1_angular = -1.0 if self.p1_linear < 0.0 else 1.0
                     elif keys[pygame.K_d]:
-                        self.p1_angular = -1.0
+                        self.p1_angular = 1.0 if self.p1_linear < 0.0 else -1.0
                         
                     if keys[pygame.K_j]:
-                        self.p1_turret_angle = self.normalize_angle(self.p1_turret_angle + 0.05)
+                        self.p1_turret_angle = self.normalize_angle(self.p1_turret_angle + 0.06)
                     elif keys[pygame.K_l]:
-                        self.p1_turret_angle = self.normalize_angle(self.p1_turret_angle - 0.05)
+                        self.p1_turret_angle = self.normalize_angle(self.p1_turret_angle - 0.06)
                         
                 # Player 2 Movement
                 if not self.is_network:
@@ -1083,14 +1244,14 @@ class PygameVisualizer(Node):
                         
                     self.p2_angular = 0.0
                     if keys[pygame.K_LEFT]:
-                        self.p2_angular = 1.0
+                        self.p2_angular = -1.0 if self.p2_linear < 0.0 else 1.0
                     elif keys[pygame.K_RIGHT]:
-                        self.p2_angular = -1.0
+                        self.p2_angular = 1.0 if self.p2_linear < 0.0 else -1.0
                         
                     if keys[pygame.K_LEFTBRACKET] or keys[pygame.K_COMMA]:
-                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle + 0.05)
+                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle + 0.06)
                     elif keys[pygame.K_RIGHTBRACKET] or keys[pygame.K_PERIOD]:
-                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle - 0.05)
+                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle - 0.06)
                 elif self.player_id == 2:
                     # Network P2 (WASD)
                     self.p2_linear = 0.0
@@ -1101,14 +1262,14 @@ class PygameVisualizer(Node):
                         
                     self.p2_angular = 0.0
                     if keys[pygame.K_a]:
-                        self.p2_angular = 1.0
+                        self.p2_angular = -1.0 if self.p2_linear < 0.0 else 1.0
                     elif keys[pygame.K_d]:
-                        self.p2_angular = -1.0
+                        self.p2_angular = 1.0 if self.p2_linear < 0.0 else -1.0
                         
                     if keys[pygame.K_j]:
-                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle + 0.05)
+                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle + 0.06)
                     elif keys[pygame.K_l]:
-                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle - 0.05)
+                        self.p2_turret_angle = self.normalize_angle(self.p2_turret_angle - 0.06)
 
             # --- Update Particles ---
             for p in self.particles[:]:
@@ -1151,12 +1312,37 @@ class PygameVisualizer(Node):
         pygame.quit()
 
     def destroy_node(self):
+        if self.is_network and self.current_match_id:
+            try:
+                self.lobby_data['status'] = 'end'
+                for _ in range(5):
+                    self.publish_lobby_advertisement()
+                    time.sleep(0.02)
+            except Exception:
+                pass
         self.stop_game_server()
         super().destroy_node()
 
 def main(args=None):
     rclpy.init(args=args)
     visualizer = PygameVisualizer()
+    # Handle SIGTERM/SIGINT to ensure we clean up rclpy and spawned server
+    def _on_signal(signum, frame):
+        try:
+            visualizer.get_logger().info(f'Received signal {signum}, shutting down...')
+        except Exception:
+            pass
+        try:
+            visualizer.destroy_node()
+        except Exception:
+            pass
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
     try:
         visualizer.run()
     except KeyboardInterrupt:

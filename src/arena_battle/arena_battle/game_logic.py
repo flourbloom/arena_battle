@@ -8,6 +8,12 @@ import rclpy
 from rclpy.node import Node
 from arena_battle_interfaces.msg import RobotCombatCommand, RobotState, Projectile, GameState
 from std_msgs.msg import String
+import signal
+import threading
+import os
+import sys
+import uuid
+import subprocess
 
 class RobotTracker:
     def __init__(self, x, y, theta, name, owner_id):
@@ -28,8 +34,9 @@ class RobotTracker:
         self.ammo_regen_timer = 0.0
 
 class GameLogic(Node):
-    def __init__(self):
-        super().__init__('game_server')
+    def __init__(self, matchid=None):
+        name = 'game_server' if matchid is None else f'game_server_{matchid}'
+        super().__init__(name)
         
         # Two players initialized at opposite sides of the circular arena
         self.player1 = RobotTracker(-1.5, 0.0, 0.0, "Player 1", 1)
@@ -43,55 +50,169 @@ class GameLogic(Node):
         self.projectile_id_counter = 0
         
         # Subscribe to separate player commands (standard QoS depth 10)
-        self.sub_p1 = self.create_subscription(
-            RobotCombatCommand, 
-            '/p1/command', 
-            lambda msg: self.command_callback(msg, self.player1), 
-            10
-        )
-        self.sub_p2 = self.create_subscription(
-            RobotCombatCommand, 
-            '/p2/command', 
-            lambda msg: self.command_callback(msg, self.player2), 
-            10
-        )
+        # If running as a match worker, use match-scoped topics
+        if matchid is None:
+            self.sub_p1 = self.create_subscription(
+                RobotCombatCommand,
+                '/p1/command',
+                lambda msg: self.command_callback(msg, self.player1),
+                10
+            )
+            self.sub_p2 = self.create_subscription(
+                RobotCombatCommand,
+                '/p2/command',
+                lambda msg: self.command_callback(msg, self.player2),
+                10
+            )
+        else:
+            self.sub_p1 = self.create_subscription(
+                RobotCombatCommand,
+                f'/match/{matchid}/p1/command',
+                lambda msg: self.command_callback(msg, self.player1),
+                10
+            )
+            self.sub_p2 = self.create_subscription(
+                RobotCombatCommand,
+                f'/match/{matchid}/p2/command',
+                lambda msg: self.command_callback(msg, self.player2),
+                10
+            )
         
         # Subscribe to lobby advertisements to manage game state
+        # Master listens to lobby to spawn matches; workers listen to control pause/end for their match
         self.lobby_sub = self.create_subscription(
             String,
             '/lobby_advertisement',
             self.lobby_callback,
             10
         )
-        
-        # Publisher for global game state
+
+        # Publisher for game state (namespaced for workers, global for master)
+        state_topic = '/global_game_state' if matchid is None else f'/match/{matchid}/game_state'
         self.state_pub = self.create_publisher(
             GameState,
-            '/global_game_state',
+            state_topic,
             10
         )
         
-        # Timer for updates (50Hz -> dt = 0.02s)
-        self.dt = 0.02
+        # Timer for updates (100Hz -> dt = 0.01s)
+        self.dt = 0.01
         self.timer = self.create_timer(self.dt, self.update_game)
         domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
-        self.get_logger().info(f'2-Player Game Logic (Model Node) Ready! (ROS_DOMAIN_ID: {domain_id})')
+        if matchid is None:
+            self.get_logger().info(f'Game Master Ready! (ROS_DOMAIN_ID: {domain_id})')
+        else:
+            self.get_logger().info(f'Game Worker {matchid} Ready! (ROS_DOMAIN_ID: {domain_id})')
+        self._matchid = matchid
+        self.last_p1_cmd_time = time.time()
+        self.last_p2_cmd_time = time.time()
+        self.finished_matches = set()
 
     def lobby_callback(self, msg):
         try:
             data = json.loads(msg.data)
             status = data.get("status", "")
-            if status in ["waiting", "ready"]:
-                if self.is_playing:
-                    self.get_logger().info("Lobby waiting/ready. Pausing game updates.")
-                    self.is_playing = False
-            elif status == "playing":
-                if not self.is_playing:
-                    self.get_logger().info("Lobby status changed to playing. Resetting and starting game.")
-                    self.reset_game()
-                    self.is_playing = True
+            matchid = data.get("match_id")
+            # If this is a worker, only act on messages for our match
+            if self._matchid is not None:
+                if matchid != self._matchid:
+                    return
+                # control messages for this worker
+                if status in ["waiting", "ready", "paused"]:
+                    if self.is_playing:
+                        self.get_logger().info(f"[Match {self._matchid}] Pausing game updates (status={status}).")
+                        self.is_playing = False
+                elif status == "playing":
+                    if not self.is_playing:
+                        self.get_logger().info(f"[Match {self._matchid}] Resuming game updates.")
+                        self.is_playing = True
+                elif status in ["end", "terminate"]:
+                    self.get_logger().info(f"[Match {self._matchid}] Received end signal; shutting down.")
+                    # schedule immediate shutdown
+                    def _end_proc():
+                        try:
+                            self.destroy_node()
+                        except Exception:
+                            pass
+                        try:
+                            rclpy.shutdown()
+                        except Exception:
+                            pass
+                        try:
+                            os._exit(0)
+                        except Exception:
+                            pass
+                    t = threading.Timer(0.5, _end_proc)
+                    t.daemon = True
+                    t.start()
+                return
+            # Master logic (no matchid):
+            if not hasattr(self, 'workers'):
+                self.workers = {}
+            if not hasattr(self, 'finished_matches'):
+                self.finished_matches = set()
+                
+            # Clean up terminated workers from self.workers dictionary
+            for mid in list(self.workers.keys()):
+                proc = self.workers[mid]
+                if proc.poll() is not None:
+                    self.get_logger().info(f"Worker for match {mid} has terminated. Removing tracker.")
+                    del self.workers[mid]
+
+            if status == "playing":
+                if matchid:
+                    mid = str(matchid)
+                    if mid[0].isdigit():
+                        mid = 'm' + mid
+                    if mid not in self.workers and mid not in self.finished_matches:
+                        self.get_logger().info(f"Lobby status for match {mid} is playing. Spawning match worker.")
+                        self.spawn_worker(mid)
+            elif status in ["end", "terminate", "game_over"]:
+                if matchid:
+                    mid = str(matchid)
+                    if mid[0].isdigit():
+                        mid = 'm' + mid
+                    self.finished_matches.add(mid)
+                    if mid in self.workers:
+                        proc = self.workers[mid]
+                        if proc.poll() is None:
+                            self.get_logger().info(f"Master terminating worker process group for match {mid}")
+                            try:
+                                pgid = os.getpgid(proc.pid)
+                                os.killpg(pgid, signal.SIGTERM)
+                                proc.wait(timeout=1.0)
+                            except Exception:
+                                try:
+                                    proc.terminate()
+                                    proc.wait(timeout=0.5)
+                                except Exception:
+                                    try:
+                                        proc.kill()
+                                    except Exception:
+                                        pass
+                        del self.workers[mid]
         except Exception as e:
             self.get_logger().error(f"Error parsing lobby advertisement: {e}")
+
+    def spawn_worker(self, matchid):
+        # Launch a separate python process running this file as a worker
+        try:
+            self.get_logger().info(f'Spawning worker for match {matchid}')
+            # prefer launching via ros2 so environment is correct
+            # ensure matchid is safe for topic tokens
+            mid = str(matchid)
+            if mid and mid[0].isdigit():
+                mid = 'm' + mid
+            cmd = ["ros2", "run", "arena_battle", "game_logic", "--", "--match-id", str(mid)]
+            env = os.environ.copy()
+            # don't block; let worker run independently, setsid for process group
+            p = subprocess.Popen(cmd, env=env, preexec_fn=os.setsid)
+            # store reference so we can manage later
+            if not hasattr(self, 'workers'):
+                self.workers = {}
+            self.workers[matchid] = p
+        except Exception as e:
+            self.get_logger().error(f'Failed to spawn worker {matchid}: {e}')
 
     def reset_game(self):
         self.player1.x = -1.5
@@ -124,16 +245,30 @@ class GameLogic(Node):
         self.get_logger().info('🏆 Game Reset and Started!')
 
     def command_callback(self, msg, player):
+        if player.owner_id == 1:
+            self.last_p1_cmd_time = time.time()
+        elif player.owner_id == 2:
+            self.last_p2_cmd_time = time.time()
+
         if self.game_over:
             return
             
         # Update turret angle (relative to base)
         player.turret_angle = msg.turret_angle
         
-        # Update robot pose directly from client prediction
-        player.x = msg.x
-        player.y = msg.y
-        player.theta = msg.theta
+        # Update robot pose (scaled by self.dt to keep speed constant)
+        player.theta += msg.angular_velocity * (6.0 * self.dt)
+        new_x = player.x + msg.linear_velocity * math.cos(player.theta) * (10.0 * self.dt)
+        new_y = player.y + msg.linear_velocity * math.sin(player.theta) * (10.0 * self.dt)
+        
+        # Circular arena boundary constraint (radius 3.5m, robot radius ~0.25m -> max_r = 3.25m)
+        dist = math.sqrt(new_x**2 + new_y**2)
+        if dist > 3.25:
+            player.x = 3.25 * new_x / dist
+            player.y = 3.25 * new_y / dist
+        else:
+            player.x = new_x
+            player.y = new_y
         
         # Handle weapon firing
         if msg.shoot:
@@ -204,6 +339,36 @@ class GameLogic(Node):
             self.start_time = time.time()
             
         time_elapsed = time.time() - self.start_time
+        
+        # Check client timeout for worker nodes
+        if self._matchid is not None and not self.game_over:
+            now = time.time()
+            # If we haven't received any commands from a player for more than 5.0 seconds, shut down
+            if now - self.last_p1_cmd_time > 5.0 or now - self.last_p2_cmd_time > 5.0:
+                self.get_logger().warn(
+                    f"[Match {self._matchid}] Client timeout detected "
+                    f"(P1 last cmd: {now - self.last_p1_cmd_time:.1f}s ago, "
+                    f"P2 last cmd: {now - self.last_p2_cmd_time:.1f}s ago). Shutting down worker."
+                )
+                self.game_over = True
+                self._shutdown_scheduled = True
+                def _shutdown_proc():
+                    try:
+                        self.destroy_node()
+                    except Exception:
+                        pass
+                    try:
+                        rclpy.shutdown()
+                    except Exception:
+                        pass
+                    try:
+                        os._exit(0)
+                    except Exception:
+                        pass
+                t = threading.Timer(0.1, _shutdown_proc)
+                t.daemon = True
+                t.start()
+                return
         
         # Robot-to-robot collision resolution (each has radius ~0.25m -> min_dist = 0.5m)
         dx = self.player2.x - self.player1.x
@@ -320,9 +485,67 @@ class GameLogic(Node):
             
         self.state_pub.publish(state_msg)
 
+        # If running as a worker and game ended, schedule shutdown of this server process
+        if self._matchid is not None and self.game_over and not getattr(self, '_shutdown_scheduled', False):
+            self._shutdown_scheduled = True
+            self.get_logger().info('Match finished — scheduling server shutdown in 1s')
+            def _shutdown_proc():
+                try:
+                    self.get_logger().info('Shutting down game server process now')
+                except Exception:
+                    pass
+                try:
+                    try:
+                        self.destroy_node()
+                    except Exception:
+                        pass
+                    try:
+                        rclpy.shutdown()
+                    except Exception:
+                        pass
+                finally:
+                    try:
+                        os._exit(0)
+                    except Exception:
+                        pass
+
+            t = threading.Timer(1.0, _shutdown_proc)
+            t.daemon = True
+            t.start()
+
 def main(args=None):
     rclpy.init(args=args)
-    node = GameLogic()
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--match-id', dest='match_id', default=None)
+    parsed, unknown = parser.parse_known_args()
+    node = GameLogic(matchid=parsed.match_id)
+    # Ensure termination signals cause a clean shutdown
+    def _on_signal(signum, frame):
+        try:
+            node.get_logger().info(f'Received signal {signum}, shutting down...')
+        except Exception:
+            pass
+        try:
+            # If master, terminate child workers using process group signals
+            if getattr(node, '_matchid', None) is None and hasattr(node, 'workers'):
+                for mid, proc in list(node.workers.items()):
+                    try:
+                        node.get_logger().info(f'Terminating worker {mid}')
+                        pgid = os.getpgid(proc.pid)
+                        os.killpg(pgid, signal.SIGTERM)
+                        proc.wait(timeout=0.5)
+                    except Exception:
+                        try:
+                            proc.terminate()
+                        except Exception:
+                            pass
+            rclpy.shutdown()
+        except Exception:
+            pass
+
+    signal.signal(signal.SIGTERM, _on_signal)
+    signal.signal(signal.SIGINT, _on_signal)
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
