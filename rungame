@@ -15,8 +15,7 @@ if [ "$1" = "server" ]; then
     echo "[Cleanup] Killing any existing game_logic server processes..."
     pkill -9 -f "arena_battle.*game_logic" 2>/dev/null || true
 else
-    echo "[Cleanup] Killing any existing pygame_visualizer client processes..."
-    pkill -9 -f "arena_battle.*pygame_visualizer" 2>/dev/null || true
+    echo "[Cleanup] Leaving existing pygame_visualizer client processes running (allow multiple clients)."
 fi
 sleep 0.3
 
@@ -35,6 +34,7 @@ echo "[Info] ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
 
 if [ "$1" = "server" ]; then
     echo "[Start] Launching Game Logic Server..."
+    export ARENA_ALLOW_LOCAL_SERVER=1
     ros2 run arena_battle game_logic
 elif [ "$1" = "p1" ]; then
     echo "[Start] Launching Arena Battle Client P1..."
