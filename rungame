@@ -1,10 +1,14 @@
 #!/bin/bash
-# Configure ROS 2 Domain ID if not already set by the environment
-export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-
 # Get the directory of this script
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
+
+# Configure ROS 2 Domain ID (Check local .domain_id file, then environment, fallback to 0)
+if [ -f "$DIR/.domain_id" ]; then
+    export ROS_DOMAIN_ID=$(cat "$DIR/.domain_id" | tr -d '[:space:]')
+else
+    export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+fi
 
 # Source ROS 2 Humble
 if [ -f /opt/ros/humble/setup.bash ]; then
