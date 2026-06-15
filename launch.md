@@ -45,12 +45,25 @@ To run ROS 2 commands, the build environment must be sourced in **every new term
 source ~/arena_battle/install/setup.bash
 ```
 
-### Step 1: Launch the Server & Visualizers
-In your first terminal, launch the `game_state_manager` physics engine and both player's visualizer windows:
+### Step 1: Launch the Server
+In your first terminal on the host machine, launch the `game_logic` physics engine:
 ```bash
-ros2 launch arena_battle arena_battle.launch.py
+ros2 launch arena_battle server.launch.py
 ```
-*This will open two Pygame GUI windows (Player 1 and Player 2). In this version, these windows are **pure listeners** and only display the battle state. They do not capture mouse/keyboard inputs directly.*
+
+### Step 2: Launch the Visualizers
+On the same machine or a different device on the same Wi-Fi, launch the visualizers. (Note: The `ROS_DOMAIN_ID` is hardcoded to `67` in the launch files so they can discover the server).
+
+For Player 1:
+```bash
+ros2 launch arena_battle player1.launch.py
+```
+
+For Player 2:
+```bash
+ros2 launch arena_battle player2.launch.py
+```
+*These will open the Pygame GUI windows. In this version, these windows are **pure listeners** and only display the battle state. They do not capture mouse/keyboard inputs directly.*
 
 ---
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 
+import os
 import sys
 import select
+
+# Hardcode domain ID
+os.environ['ROS_DOMAIN_ID'] = '67'
 import tty
 import termios
 import math
