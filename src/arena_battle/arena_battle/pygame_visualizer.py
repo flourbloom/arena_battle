@@ -131,8 +131,9 @@ class PygameVisualizer(Node):
             self.font_title = pygame.font.Font(None, 22)
             self.font_hud = pygame.font.Font(None, 18)
             self.font_controls = pygame.font.Font(None, 16)
-            
-        self.get_logger().info("Pygame Unified Client Initialized!")
+        import os
+        domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
+        self.get_logger().info(f"Pygame Unified Client Initialized! (ROS_DOMAIN_ID: {domain_id})")
 
     def start_game_server(self):
         self.stop_game_server()
@@ -434,6 +435,12 @@ class PygameVisualizer(Node):
         self.draw_button("HOST LAN LOBBY", btn_host, (10, 80, 45), (15, 120, 70), (255, 255, 255), btn_host.collidepoint(mx, my))
         self.draw_button("JOIN LAN LOBBY", btn_join, (80, 10, 80), (120, 15, 120), (255, 255, 255), btn_join.collidepoint(mx, my))
         self.draw_button("EXIT SIMULATION", btn_exit, (80, 15, 15), (120, 20, 20), (255, 255, 255), btn_exit.collidepoint(mx, my))
+
+        # Active ROS_DOMAIN_ID display
+        import os
+        domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
+        lbl_domain = self.font_menu_label.render(f"Network Domain ID (ROS_DOMAIN_ID): {domain_id}", True, (120, 120, 140))
+        self.screen.blit(lbl_domain, lbl_domain.get_rect(center=(self.screen_width // 2, self.screen_height - 30)))
 
     def render_lobby_host(self):
         self.screen.fill((8, 8, 16))

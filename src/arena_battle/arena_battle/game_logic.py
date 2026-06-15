@@ -73,8 +73,9 @@ class GameLogic(Node):
         # Timer for updates (50Hz -> dt = 0.02s)
         self.dt = 0.02
         self.timer = self.create_timer(self.dt, self.update_game)
-        
-        self.get_logger().info('2-Player Game Logic (Model Node) Ready!')
+        import os
+        domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
+        self.get_logger().info(f'2-Player Game Logic (Model Node) Ready! (ROS_DOMAIN_ID: {domain_id})')
 
     def lobby_callback(self, msg):
         try:
