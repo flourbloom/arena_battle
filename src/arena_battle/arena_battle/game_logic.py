@@ -42,9 +42,9 @@ class GameLogic(Node):
         self.projectiles = []  # list of dicts: {'id': int, 'x': float, 'y': float, 'vx': float, 'vy': float, 'type': int, 'owner': int, 'lifetime': float}
         self.projectile_id_counter = 0
         
-        # Best-effort QoS profile with history queue depth of 1 (forces latest packets only, zero buffering)
+        # Reliable QoS profile with history queue depth of 1 (forces latest packets only, prevents queue buildup, compatible with standard QoS)
         self.game_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=1
         )
