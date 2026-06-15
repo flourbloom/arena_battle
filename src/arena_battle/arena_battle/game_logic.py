@@ -5,6 +5,7 @@ import time
 import json
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from arena_battle_interfaces.msg import RobotCombatCommand, RobotState, Projectile, GameState
 from std_msgs.msg import String
 
@@ -41,18 +42,25 @@ class GameLogic(Node):
         self.projectiles = []  # list of dicts: {'id': int, 'x': float, 'y': float, 'vx': float, 'vy': float, 'type': int, 'owner': int, 'lifetime': float}
         self.projectile_id_counter = 0
         
+        # Best-effort QoS profile with history queue depth of 1 (forces latest packets only, zero buffering)
+        self.game_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1
+        )
+        
         # Subscribe to separate player commands
         self.sub_p1 = self.create_subscription(
             RobotCombatCommand, 
             '/p1/robot_command', 
             lambda msg: self.command_callback(msg, self.player1), 
-            10
+            self.game_qos
         )
         self.sub_p2 = self.create_subscription(
             RobotCombatCommand, 
             '/p2/robot_command', 
             lambda msg: self.command_callback(msg, self.player2), 
-            10
+            self.game_qos
         )
         
         # Subscribe to lobby advertisements to manage game state
@@ -67,7 +75,7 @@ class GameLogic(Node):
         self.state_pub = self.create_publisher(
             GameState,
             '/game_state',
-            10
+            self.game_qos
         )
         
         # Timer for updates (50Hz -> dt = 0.02s)

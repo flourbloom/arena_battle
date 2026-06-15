@@ -24,9 +24,15 @@ fi
 source install/setup.bash
 
 if [ "$1" = "server" ]; then
+    echo "Clearing any orphaned game logic servers..."
+    pkill -f game_logic 2>/dev/null || true
+    sleep 0.5
     echo "Starting Game Logic Server..."
     ros2 run arena_battle game_logic
 else
+    echo "Clearing any orphaned client visualizers..."
+    pkill -f pygame_visualizer 2>/dev/null || true
+    sleep 0.5
     echo "Starting Arena Battle Client..."
     ros2 run arena_battle pygame_visualizer
 fi
