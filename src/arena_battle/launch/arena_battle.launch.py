@@ -6,7 +6,8 @@ def generate_launch_description():
     client = Node(
         package='arena_battle',
         executable='pygame_visualizer',
-        name='pygame_visualizer',
+        name='pygame_node',
+        namespace='p1',
         output='screen'
     )
     

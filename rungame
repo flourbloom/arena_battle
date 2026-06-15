@@ -3,12 +3,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$DIR"
 
-# Configure ROS 2 Domain ID (Check local .domain_id file, then environment, fallback to 0)
-if [ -f "$DIR/.domain_id" ]; then
-    export ROS_DOMAIN_ID=$(cat "$DIR/.domain_id" | tr -d '[:space:]')
-else
-    export ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-fi
+export ROS_DOMAIN_ID=67
 
 # Source ROS 2 Humble
 if [ -f /opt/ros/humble/setup.bash ]; then
@@ -41,6 +36,12 @@ echo "[Info] ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
 if [ "$1" = "server" ]; then
     echo "[Start] Launching Game Logic Server..."
     ros2 run arena_battle game_logic
+elif [ "$1" = "p1" ]; then
+    echo "[Start] Launching Arena Battle Client P1..."
+    ros2 run arena_battle pygame_visualizer --ros-args -r __ns:=/p1
+elif [ "$1" = "p2" ]; then
+    echo "[Start] Launching Arena Battle Client P2..."
+    ros2 run arena_battle pygame_visualizer --ros-args -r __ns:=/p2
 else
     echo "[Start] Launching Arena Battle Client..."
     ros2 run arena_battle pygame_visualizer

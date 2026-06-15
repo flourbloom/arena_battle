@@ -29,7 +29,7 @@ class RobotTracker:
 
 class GameLogic(Node):
     def __init__(self):
-        super().__init__('game_state_manager')
+        super().__init__('game_server')
         
         # Two players initialized at opposite sides of the circular arena
         self.player1 = RobotTracker(-1.5, 0.0, 0.0, "Player 1", 1)
@@ -45,13 +45,13 @@ class GameLogic(Node):
         # Subscribe to separate player commands (standard QoS depth 10)
         self.sub_p1 = self.create_subscription(
             RobotCombatCommand, 
-            '/p1/robot_command', 
+            '/p1/command', 
             lambda msg: self.command_callback(msg, self.player1), 
             10
         )
         self.sub_p2 = self.create_subscription(
             RobotCombatCommand, 
-            '/p2/robot_command', 
+            '/p2/command', 
             lambda msg: self.command_callback(msg, self.player2), 
             10
         )
@@ -67,7 +67,7 @@ class GameLogic(Node):
         # Publisher for global game state
         self.state_pub = self.create_publisher(
             GameState,
-            '/game_state',
+            '/global_game_state',
             10
         )
         
@@ -130,19 +130,10 @@ class GameLogic(Node):
         # Update turret angle (relative to base)
         player.turret_angle = msg.turret_angle
         
-        # Update robot pose
-        player.theta += msg.angular_velocity * 0.1
-        new_x = player.x + msg.linear_velocity * math.cos(player.theta) * 0.2
-        new_y = player.y + msg.linear_velocity * math.sin(player.theta) * 0.2
-        
-        # Circular arena boundary constraint (radius 3.5m, robot radius ~0.25m -> max_r = 3.25m)
-        dist = math.sqrt(new_x**2 + new_y**2)
-        if dist > 3.25:
-            player.x = 3.25 * new_x / dist
-            player.y = 3.25 * new_y / dist
-        else:
-            player.x = new_x
-            player.y = new_y
+        # Update robot pose directly from client prediction
+        player.x = msg.x
+        player.y = msg.y
+        player.theta = msg.theta
         
         # Handle weapon firing
         if msg.shoot:

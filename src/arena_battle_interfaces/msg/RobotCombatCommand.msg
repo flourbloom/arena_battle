@@ -4,3 +4,6 @@ bool shoot
 bool shield
 uint8 weapon_type
 float32 turret_angle
+float32 x
+float32 y
+float32 theta
