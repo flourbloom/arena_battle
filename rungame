@@ -1,0 +1,25 @@
+#!/bin/bash
+# Get the directory of this script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$DIR"
+
+# Source ROS 2 Humble
+if [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
+fi
+
+# Build if build/install directories don't exist
+if [ ! -d "install" ] || [ ! -f "install/setup.bash" ]; then
+    echo "First time build. Running colcon build..."
+    colcon build --symlink-install
+fi
+
+source install/setup.bash
+
+if [ "$1" = "server" ]; then
+    echo "Starting Game Logic Server..."
+    ros2 run arena_battle game_logic
+else
+    echo "Starting Arena Battle Client..."
+    ros2 run arena_battle pygame_visualizer
+fi

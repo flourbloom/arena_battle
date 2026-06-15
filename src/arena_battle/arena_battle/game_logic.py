@@ -2,9 +2,11 @@
 
 import math
 import time
+import json
 import rclpy
 from rclpy.node import Node
 from arena_battle_interfaces.msg import RobotCombatCommand, RobotState, Projectile, GameState
+from std_msgs.msg import String
 
 class RobotTracker:
     def __init__(self, x, y, theta, name, owner_id):
@@ -34,6 +36,7 @@ class GameLogic(Node):
         
         self.start_time = None
         self.game_over = False
+        self.is_playing = True  # Default to True for standalone/backwards compatibility
         
         self.projectiles = []  # list of dicts: {'id': int, 'x': float, 'y': float, 'vx': float, 'vy': float, 'type': int, 'owner': int, 'lifetime': float}
         self.projectile_id_counter = 0
@@ -52,6 +55,14 @@ class GameLogic(Node):
             10
         )
         
+        # Subscribe to lobby advertisements to manage game state
+        self.lobby_sub = self.create_subscription(
+            String,
+            '/lobby_advertisement',
+            self.lobby_callback,
+            10
+        )
+        
         # Publisher for global game state
         self.state_pub = self.create_publisher(
             GameState,
@@ -64,6 +75,52 @@ class GameLogic(Node):
         self.timer = self.create_timer(self.dt, self.update_game)
         
         self.get_logger().info('2-Player Game Logic (Model Node) Ready!')
+
+    def lobby_callback(self, msg):
+        try:
+            data = json.loads(msg.data)
+            status = data.get("status", "")
+            if status in ["waiting", "ready"]:
+                if self.is_playing:
+                    self.get_logger().info("Lobby waiting/ready. Pausing game updates.")
+                    self.is_playing = False
+            elif status == "playing":
+                if not self.is_playing:
+                    self.get_logger().info("Lobby status changed to playing. Resetting and starting game.")
+                    self.reset_game()
+                    self.is_playing = True
+        except Exception as e:
+            self.get_logger().error(f"Error parsing lobby advertisement: {e}")
+
+    def reset_game(self):
+        self.player1.x = -1.5
+        self.player1.y = 0.0
+        self.player1.theta = 0.0
+        self.player1.turret_angle = 0.0
+        self.player1.health = 100
+        self.player1.shield_active = False
+        self.player1.shield_duration = 0.0
+        self.player1.shield_energy = 100.0
+        self.player1.score = 0
+        self.player1.ammo = 10
+        self.player1.ammo_regen_timer = 0.0
+
+        self.player2.x = 1.5
+        self.player2.y = 0.0
+        self.player2.theta = math.pi
+        self.player2.turret_angle = 0.0
+        self.player2.health = 100
+        self.player2.shield_active = False
+        self.player2.shield_duration = 0.0
+        self.player2.shield_energy = 100.0
+        self.player2.score = 0
+        self.player2.ammo = 10
+        self.player2.ammo_regen_timer = 0.0
+
+        self.projectiles.clear()
+        self.start_time = None
+        self.game_over = False
+        self.get_logger().info('🏆 Game Reset and Started!')
 
     def command_callback(self, msg, player):
         if self.game_over:
@@ -148,6 +205,9 @@ class GameLogic(Node):
                 })
 
     def update_game(self):
+        if not self.is_playing:
+            return
+            
         if self.start_time is None:
             self.start_time = time.time()
             
@@ -277,7 +337,10 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 if __name__ == '__main__':
     main()
