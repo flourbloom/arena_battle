@@ -1,3 +1,6 @@
 #!/bin/bash
+# Configure ROS 2 Domain ID (Default is 0. Both players must use the same ID)
+export ROS_DOMAIN_ID=0
+
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 "$DIR/rungame" server
