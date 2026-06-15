@@ -13,9 +13,9 @@ class TeleopControl(Node):
     def __init__(self):
         super().__init__('teleop_control')
         
-        # Publish to the relative topic "robot_command".
-        # This will resolve to /p1/robot_command or /p2/robot_command when run in a namespace.
-        self.publisher = self.create_publisher(RobotCombatCommand, 'robot_command', 10)
+        # Publish to the relative topic "command".
+        # This will resolve to /p1/command or /p2/command when run in a namespace.
+        self.publisher = self.create_publisher(RobotCombatCommand, 'command', 10)
         
         # State variables
         self.linear = 0.0

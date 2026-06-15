@@ -16,11 +16,18 @@ from std_msgs.msg import String
 
 class PygameVisualizer(Node):
     def __init__(self):
-        super().__init__('pygame_visualizer')
+        super().__init__('pygame_node')
         
         # Declare player_id parameter just in case
         self.declare_parameter('player_id', 1)
         self.player_id = self.get_parameter('player_id').get_parameter_value().integer_value
+        
+        # If run inside a specific namespace containing p1/p2, override player_id to match
+        ns = self.get_namespace()
+        if 'p2' in ns:
+            self.player_id = 2
+        elif 'p1' in ns:
+            self.player_id = 1
         
         # GUI State
         self.state = "MENU" # MENU, LOBBY_HOST, LOBBY_JOIN, LOBBY_GUEST, GAMEPLAY
@@ -82,7 +89,7 @@ class PygameVisualizer(Node):
         # ROS 2 Subscriptions and Publishers (standard QoS depth 10)
         self.state_sub = self.create_subscription(
             GameState,
-            '/game_state',
+            '/global_game_state',
             self.state_callback,
             10
         )
@@ -93,8 +100,8 @@ class PygameVisualizer(Node):
         self.join_pub = self.create_publisher(String, '/lobby_join_request', 10)
         self.join_sub = self.create_subscription(String, '/lobby_join_request', self.lobby_join_callback, 10)
         
-        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, '/p1/robot_command', 10)
-        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, '/p2/robot_command', 10)
+        self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, '/p1/command', 10)
+        self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, '/p2/command', 10)
         
         # Timers
         self.cmd_timer = self.create_timer(0.02, self.publish_commands) # 50Hz
@@ -255,8 +262,24 @@ class PygameVisualizer(Node):
         if self.state != "GAMEPLAY":
             return
             
-        # P1 / Host local publish
+        # P1 / Host local update and publish
         if not self.is_network or self.player_id == 1:
+            # Client-side prediction for Player 1
+            self.p1_theta += self.p1_angular * 0.1
+            new_x = self.p1_x + self.p1_linear * math.cos(self.p1_theta) * 0.2
+            new_y = self.p1_y + self.p1_linear * math.sin(self.p1_theta) * 0.2
+            
+            # Circular arena boundary constraint
+            dist = math.sqrt(new_x**2 + new_y**2)
+            if dist > 3.25:
+                self.p1_x = 3.25 * new_x / dist
+                self.p1_y = 3.25 * new_y / dist
+            else:
+                self.p1_x = new_x
+                self.p1_y = new_y
+            
+            self.p1_turret_angle_received = self.p1_turret_angle
+            
             msg = RobotCombatCommand()
             msg.linear_velocity = float(self.p1_linear)
             msg.angular_velocity = float(self.p1_angular)
@@ -264,6 +287,9 @@ class PygameVisualizer(Node):
             msg.shoot = bool(self.p1_shoot)
             msg.shield = bool(self.p1_shield)
             msg.weapon_type = int(self.p1_weapon_type)
+            msg.x = float(self.p1_x)
+            msg.y = float(self.p1_y)
+            msg.theta = float(self.p1_theta)
             self.p1_cmd_pub.publish(msg)
             
             # Reset triggers
@@ -271,8 +297,24 @@ class PygameVisualizer(Node):
             self.p1_shield = False
             self.p1_weapon_type = 0
             
-        # P2 / Guest local publish
+        # P2 / Guest local update and publish
         if not self.is_network or self.player_id == 2:
+            # Client-side prediction for Player 2
+            self.p2_theta += self.p2_angular * 0.1
+            new_x = self.p2_x + self.p2_linear * math.cos(self.p2_theta) * 0.2
+            new_y = self.p2_y + self.p2_linear * math.sin(self.p2_theta) * 0.2
+            
+            # Circular arena boundary constraint
+            dist = math.sqrt(new_x**2 + new_y**2)
+            if dist > 3.25:
+                self.p2_x = 3.25 * new_x / dist
+                self.p2_y = 3.25 * new_y / dist
+            else:
+                self.p2_x = new_x
+                self.p2_y = new_y
+            
+            self.p2_turret_angle_received = self.p2_turret_angle
+            
             msg = RobotCombatCommand()
             msg.linear_velocity = float(self.p2_linear)
             msg.angular_velocity = float(self.p2_angular)
@@ -280,12 +322,53 @@ class PygameVisualizer(Node):
             msg.shoot = bool(self.p2_shoot)
             msg.shield = bool(self.p2_shield)
             msg.weapon_type = int(self.p2_weapon_type)
+            msg.x = float(self.p2_x)
+            msg.y = float(self.p2_y)
+            msg.theta = float(self.p2_theta)
             self.p2_cmd_pub.publish(msg)
             
             # Reset triggers
             self.p2_shoot = False
             self.p2_shield = False
             self.p2_weapon_type = 0
+
+        # Robot-to-robot collision resolution to match the server physics
+        dx = self.p2_x - self.p1_x
+        dy = self.p2_y - self.p1_y
+        dist = math.sqrt(dx**2 + dy**2)
+        min_dist = 0.5
+        if dist < min_dist:
+            if dist == 0.0:
+                dx = 0.1
+                dy = 0.0
+                dist = 0.1
+            overlap = min_dist - dist
+            push_x = (dx / dist) * (overlap / 2.0)
+            push_y = (dy / dist) * (overlap / 2.0)
+            
+            if not self.is_network:
+                # In local mode, both players are local
+                self.p1_x -= push_x
+                self.p1_y -= push_y
+                self.p2_x += push_x
+                self.p2_y += push_y
+            else:
+                # In network mode, we only push our own local player
+                if self.player_id == 1:
+                    self.p1_x -= push_x
+                    self.p1_y -= push_y
+                else:
+                    self.p2_x += push_x
+                    self.p2_y += push_y
+                    
+            # Clamp back inside boundary if pushed out
+            for prefix in ['p1', 'p2']:
+                x_val = getattr(self, f"{prefix}_x")
+                y_val = getattr(self, f"{prefix}_y")
+                r = math.sqrt(x_val**2 + y_val**2)
+                if r > 3.25:
+                    setattr(self, f"{prefix}_x", 3.25 * x_val / r)
+                    setattr(self, f"{prefix}_y", 3.25 * y_val / r)
 
     def clean_active_lobbies(self):
         now = time.time()
@@ -294,28 +377,64 @@ class PygameVisualizer(Node):
                 del self.active_lobbies[hid]
 
     def state_callback(self, msg):
-        # Update Player 1 properties
-        self.p1_x = msg.player1.x
-        self.p1_y = msg.player1.y
-        self.p1_theta = msg.player1.theta
-        self.p1_turret_angle_received = msg.player1.turret_angle
+        # Update non-pose properties from server (health, shield, score, ammo)
         self.p1_health = msg.player1.health
         self.p1_shield_active = msg.player1.shield_active
         self.p1_shield_energy = msg.player1.shield_energy
         self.p1_score = msg.player1.score
         self.p1_ammo = msg.player1.ammo
         
-        # Update Player 2 properties
-        self.p2_x = msg.player2.x
-        self.p2_y = msg.player2.y
-        self.p2_theta = msg.player2.theta
-        self.p2_turret_angle_received = msg.player2.turret_angle
         self.p2_health = msg.player2.health
         self.p2_shield_active = msg.player2.shield_active
         self.p2_shield_energy = msg.player2.shield_energy
         self.p2_score = msg.player2.score
         self.p2_ammo = msg.player2.ammo
         
+        # Selectively update player poses
+        if self.is_network:
+            if self.player_id == 1:
+                # We are Player 1. Always update Player 2 (remote) pose.
+                self.p2_x = msg.player2.x
+                self.p2_y = msg.player2.y
+                self.p2_theta = msg.player2.theta
+                self.p2_turret_angle_received = msg.player2.turret_angle
+                
+                # Sync local Player 1 pose only at start or game over
+                if msg.time_elapsed < 0.1 or msg.game_over:
+                    self.p1_x = msg.player1.x
+                    self.p1_y = msg.player1.y
+                    self.p1_theta = msg.player1.theta
+                    self.p1_turret_angle = msg.player1.turret_angle
+                    self.p1_turret_angle_received = msg.player1.turret_angle
+            elif self.player_id == 2:
+                # We are Player 2. Always update Player 1 (remote) pose.
+                self.p1_x = msg.player1.x
+                self.p1_y = msg.player1.y
+                self.p1_theta = msg.player1.theta
+                self.p1_turret_angle_received = msg.player1.turret_angle
+                
+                # Sync local Player 2 pose only at start or game over
+                if msg.time_elapsed < 0.1 or msg.game_over:
+                    self.p2_x = msg.player2.x
+                    self.p2_y = msg.player2.y
+                    self.p2_theta = msg.player2.theta
+                    self.p2_turret_angle = msg.player2.turret_angle
+                    self.p2_turret_angle_received = msg.player2.turret_angle
+        else:
+            # Local match - poses updated locally, sync with server only at start or game over
+            if msg.time_elapsed < 0.1 or msg.game_over:
+                self.p1_x = msg.player1.x
+                self.p1_y = msg.player1.y
+                self.p1_theta = msg.player1.theta
+                self.p1_turret_angle = msg.player1.turret_angle
+                self.p1_turret_angle_received = msg.player1.turret_angle
+                
+                self.p2_x = msg.player2.x
+                self.p2_y = msg.player2.y
+                self.p2_theta = msg.player2.theta
+                self.p2_turret_angle = msg.player2.turret_angle
+                self.p2_turret_angle_received = msg.player2.turret_angle
+                
         self.game_over = msg.game_over
         self.time_elapsed = msg.time_elapsed
         
