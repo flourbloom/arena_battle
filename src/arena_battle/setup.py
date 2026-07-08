@@ -24,7 +24,6 @@ setup(
         'console_scripts': [
             'game_logic = arena_battle.game_logic:main',
             'pygame_visualizer = arena_battle.pygame_visualizer:main',
-            'teleop_control = arena_battle.teleop_control:main',
         ],
     },
 )

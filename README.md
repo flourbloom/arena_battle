@@ -26,10 +26,9 @@ graph TD
 
 ### 1. Decoupled MVC Pattern
 * **Model (The Game Server)**: Implemented in [game_logic.py](src/arena_battle/arena_battle/game_logic.py). It serves as the single source of truth for the game world. It is completely headless, running physics calculations (movement, boundary checks, elastic collisions, and weapon impacts) at 100Hz (`dt = 0.01s`) and broadcasting the updated state.
-* **View & Controller (The Pygame Client)**: Implemented in [pygame_visualizer.py](src/arena_battle/arena_battle/pygame_visualizer.py). 
-  * **Controller**: Captures keypresses (movement bases, turret rotations, defensive shields, and shooting triggers) when focused and publishes commands to the server.
-  * **View**: Subscribes to the server's broadcasted state and renders the arena, scores, ammunition, health levels, and local particle/trail animations at 60 FPS.
-* **Alternative CLI Controller**: Implemented in [teleop_control.py](src/arena_battle/arena_battle/teleop_control.py). A terminal-based, watchdog-monitored driving tool that can control robots in local namespaces as an alternative controller.
+* **View & Controller (The Pygame Client)**: Implemented in [pygame_visualizer.py](src/arena_battle/arena_battle/pygame_visualizer.py), which composes two mixins:
+  * **Controller / Networking**: [networking.py](src/arena_battle/arena_battle/networking.py) — captures keypresses (movement, turret rotation, shields, shooting), publishes commands to the server, and handles lobby discovery/matchmaking.
+  * **View / Rendering**: [rendering.py](src/arena_battle/arena_battle/rendering.py) — subscribes to the server's broadcasted state and renders the arena, scores, ammunition, health levels, and local particle/trail animations at 60 FPS.
 
 ### 2. Multi-Match Master-Worker Architecture
 To support multiple concurrent match sessions over a single ROS 2 network (`ROS_DOMAIN_ID`) without cross-talk:
@@ -192,8 +191,9 @@ arena_battle/
 │   └── arena_battle/                 # Core Python source package
 │       ├── arena_battle/
 │       │   ├── game_logic.py         # Headless Game server (Master & Worker logic)
-│       │   ├── pygame_visualizer.py  # View/Controller Pygame visualizer node
-│       │   └── teleop_control.py     # Alternative console terminal keyboard driver
+│       │   ├── pygame_visualizer.py  # Node class + main loop, combines the mixins below
+│       │   ├── networking.py         # NetworkMixin: ROS topics, lobby/matchmaking, command pub
+│       │   └── rendering.py          # RenderMixin: all pygame drawing/rendering
 │       ├── launch/
 │       │   └── arena_battle.launch.py# Node launcher script
 │       └── setup.py                  # Python package configuration

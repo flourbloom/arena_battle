@@ -9,8 +9,6 @@
 
   <depend>rclpy</depend>
   <depend>std_msgs</depend>
-  <depend>geometry_msgs</depend>
-  <depend>visualization_msgs</depend>
   <depend>arena_battle_interfaces</depend>
 
 

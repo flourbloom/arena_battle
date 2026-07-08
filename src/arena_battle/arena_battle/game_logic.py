@@ -10,9 +10,6 @@ from arena_battle_interfaces.msg import RobotCombatCommand, RobotState, Projecti
 from std_msgs.msg import String
 import signal
 import threading
-import os
-import sys
-import uuid
 import subprocess
 
 class RobotTracker:
