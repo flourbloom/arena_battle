@@ -209,8 +209,16 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                             if btn_local.collidepoint(mx, my):
                                 self.is_network = False
                                 self.player_id = 1
-                                self.start_game_server(force=True)
-                                time.sleep(0.5)
+                                try:
+                                    server_already_running = any(
+                                        n == 'game_server' or n.endswith('/game_server')
+                                        for n in self.get_node_names()
+                                    )
+                                except Exception:
+                                    server_already_running = False
+                                if not server_already_running:
+                                    self.start_game_server(force=True)
+                                    time.sleep(0.5)
                                 self.setup_match_topics(None)
                                 self.clean_gameplay_data()
                                 self.state = "GAMEPLAY"
