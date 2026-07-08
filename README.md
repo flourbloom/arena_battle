@@ -129,7 +129,7 @@ source /home/syphon/arena_battle/install/setup.bash
 
 ### 4. Running the Nodes
 
-* **Option A: Using Shortcut Scripts (Recommended)**
+* **Option A: Using Shortcut Scripts (Recommended for LAN multiplayer)**
   * **Start the Game Master Server**:
     ```bash
     ./runserver
@@ -142,12 +142,23 @@ source /home/syphon/arena_battle/install/setup.bash
 * **Option B: Running ROS 2 Commands Directly**
   * **Start the Game Server**:
     ```bash
-    ros2 run arena_battle game_logic
+    ros2 launch arena_battle game_server.launch.py
     ```
   * **Start the Client Node**:
     ```bash
-    ros2 run arena_battle pygame_visualizer
+    ros2 launch arena_battle game_client.launch.py
     ```
+
+* **Option C: `ros2 launch` (native ROS 2 alternative to the shortcut scripts)**
+  * **Start the Game Server** (terminal 1):
+    ```bash
+    ros2 launch arena_battle game_server.launch.py
+    ```
+  * **Start the Game Client** (terminal 2):
+    ```bash
+    ros2 launch arena_battle game_client.launch.py
+    ```
+  Both launch files pin `ROS_DOMAIN_ID=67` so the two processes find each other automatically. Once the client window opens, click **LOCAL MATCH (1 LAPTOP)** — it detects the already-running server and won't spawn a duplicate one.
 
 ---
 
