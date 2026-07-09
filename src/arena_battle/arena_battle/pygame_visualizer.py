@@ -125,14 +125,31 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         atexit.register(self.stop_game_server)
         
         # Initialize Pygame
+        # Set DPI awareness for Windows to prevent blurry/tiny windows on High-DPI screens
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
+
         pygame.init()
         pygame.font.init()
         
         # Set up display
         self.screen_width = 800
         self.screen_height = 800
-        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+        # self.screen is the virtual canvas we draw onto
+        self.screen = pygame.Surface((self.screen_width, self.screen_height))
+        
+        # The actual resizable window surface displayed to the user
+        self.window_width = 800
+        self.window_height = 800
+        self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
         pygame.display.set_caption("Arena Battle - Neon Combat")
+        self.is_fullscreen = False
         
         # Coordinates mapping: 1 meter = 100 pixels
         self.scale = 100.0
@@ -188,9 +205,15 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+                elif event.type == pygame.VIDEORESIZE:
+                    if not self.is_fullscreen:
+                        self.window_width, self.window_height = event.size
+                        self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1: # Left click
-                        mx, my = event.pos
+                        wx, wy = event.pos
+                        mx = int(wx * (self.screen_width / self.window_width))
+                        my = int(wy * (self.screen_height / self.window_height))
                         
                         if self.state == "MENU":
                             # Click name box
@@ -317,8 +340,17 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                                 self.current_match_id = None
                                 
                 elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_F11:
+                        self.is_fullscreen = not self.is_fullscreen
+                        if self.is_fullscreen:
+                            self.window_surface = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
+                            self.window_width, self.window_height = self.window_surface.get_size()
+                        else:
+                            self.window_width = 800
+                            self.window_height = 800
+                            self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
                     # Escape behavior context
-                    if event.key == pygame.K_ESCAPE:
+                    elif event.key == pygame.K_ESCAPE:
                         if self.state == "GAMEPLAY":
                             if self.game_over:
                                 # Return to menu
@@ -487,9 +519,17 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
             elif self.state == "GAMEPLAY":
                 self.render_gameplay(dt)
                 
+            scaled_surf = pygame.transform.scale(self.screen, (self.window_width, self.window_height))
+            self.window_surface.blit(scaled_surf, (0, 0))
             pygame.display.flip()
             
         pygame.quit()
+
+    def get_mouse_pos(self):
+        wx, wy = pygame.mouse.get_pos()
+        mx = int(wx * (self.screen_width / self.window_width))
+        my = int(wy * (self.screen_height / self.window_height))
+        return mx, my
 
     def destroy_node(self):
         if self.is_network and self.current_match_id:
