@@ -147,8 +147,8 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
 
         self.screen_width = 800
         self.screen_height = 800
-        # self.screen is the virtual canvas we draw onto
-        self.screen = pygame.Surface((self.screen_width, self.screen_height))
+        # self.screen points directly to the display window surface
+        self.screen = self.window_surface
         
         # Coordinates mapping: 1 meter = 100 pixels
         self.scale = 100.0
@@ -157,22 +157,8 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         self.clock = pygame.time.Clock()
         
         # Load fonts
-        try:
-            self.font_menu_title = pygame.font.SysFont("Outfit", 38, bold=True)
-            self.font_menu_subtitle = pygame.font.SysFont("Outfit", 22, bold=True)
-            self.font_menu_button = pygame.font.SysFont("Outfit", 18, bold=True)
-            self.font_menu_label = pygame.font.SysFont("Outfit", 15)
-            self.font_title = pygame.font.SysFont("Outfit", 18, bold=True)
-            self.font_hud = pygame.font.SysFont("Outfit", 14)
-            self.font_controls = pygame.font.SysFont("Outfit", 12)
-        except Exception:
-            self.font_menu_title = pygame.font.Font(None, 46)
-            self.font_menu_subtitle = pygame.font.Font(None, 26)
-            self.font_menu_button = pygame.font.Font(None, 22)
-            self.font_menu_label = pygame.font.Font(None, 18)
-            self.font_title = pygame.font.Font(None, 22)
-            self.font_hud = pygame.font.Font(None, 18)
-            self.font_controls = pygame.font.Font(None, 16)
+        self.ui_scale = 1.0
+        self.load_fonts(self.ui_scale)
         domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
         self.get_logger().info(f"Pygame Unified Client Initialized! (ROS_DOMAIN_ID: {domain_id})")
 
@@ -208,25 +194,24 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                     if not self.is_fullscreen:
                         self.window_width, self.window_height = event.size
                         self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
+                        self.handle_resize(self.window_width, self.window_height)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1: # Left click
-                        wx, wy = event.pos
-                        mx = int(wx * (self.screen_width / self.window_width))
-                        my = int(wy * (self.screen_height / self.window_height))
+                        mx, my = event.pos
                         
                         if self.state == "MENU":
                             # Click name box
-                            input_rect = pygame.Rect(self.screen_width // 2 - 150, 240, 300, 45)
+                            input_rect = self.get_ui_rect(-150, 240, 300, 45)
                             if input_rect.collidepoint(mx, my):
                                 self.name_input_active = True
                             else:
                                 self.name_input_active = False
                                 
                             # Clicks on menu buttons
-                            btn_local = pygame.Rect(self.screen_width // 2 - 150, 320, 300, 45)
-                            btn_host = pygame.Rect(self.screen_width // 2 - 150, 385, 300, 45)
-                            btn_join = pygame.Rect(self.screen_width // 2 - 150, 450, 300, 45)
-                            btn_exit = pygame.Rect(self.screen_width // 2 - 150, 515, 300, 45)
+                            btn_local = self.get_ui_rect(-150, 320, 300, 45)
+                            btn_host = self.get_ui_rect(-150, 385, 300, 45)
+                            btn_join = self.get_ui_rect(-150, 450, 300, 45)
+                            btn_exit = self.get_ui_rect(-150, 515, 300, 45)
                             
                             if btn_local.collidepoint(mx, my):
                                 self.is_network = False
@@ -269,8 +254,8 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                                 running = False
                                 
                         elif self.state == "LOBBY_HOST":
-                            btn_start = pygame.Rect(self.screen_width // 2 - 150, 480, 300, 45)
-                            btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
+                            btn_start = self.get_ui_rect(-150, 480, 300, 45)
+                            btn_back = self.get_ui_rect(-150, 545, 300, 45)
                             
                             if btn_start.collidepoint(mx, my) and self.lobby_data.get("player2_name"):
                                     # Ensure a match_id exists so master and clients can coordinate
@@ -296,19 +281,19 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                                 self.current_match_id = None
                                 
                         elif self.state == "LOBBY_JOIN":
-                            btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
+                            btn_back = self.get_ui_rect(-150, 545, 300, 45)
                             if btn_back.collidepoint(mx, my):
                                 self.state = "MENU"
                                 self.current_match_id = None
                             else:
                                 lobbies = list(self.active_lobbies.values())
                                 for idx, (lobby, _) in enumerate(lobbies[:5]):
-                                    join_btn_rect = pygame.Rect(self.screen_width // 2 + 120, 200 + idx * 60, 90, 34)
+                                    join_btn_rect = self.get_ui_rect(120, 200 + idx * 60, 90, 34)
                                     if join_btn_rect.collidepoint(mx, my) and lobby['status'] == 'waiting':
                                         self.request_join_lobby(lobby["host_id"])
                                         
                         elif self.state == "LOBBY_GUEST":
-                            btn_leave = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
+                            btn_leave = self.get_ui_rect(-150, 545, 300, 45)
                             if btn_leave.collidepoint(mx, my):
                                 self.leave_lobby()
                         elif self.state == "GAMEPLAY" and self.paused:
@@ -348,6 +333,7 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                             self.window_width = 800
                             self.window_height = 800
                             self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
+                        self.handle_resize(self.window_width, self.window_height)
                     # Escape behavior context
                     elif event.key == pygame.K_ESCAPE:
                         if self.state == "GAMEPLAY":
@@ -518,20 +504,45 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
             elif self.state == "GAMEPLAY":
                 self.render_gameplay(dt)
                 
-            if self.window_width == self.screen_width and self.window_height == self.screen_height:
-                self.window_surface.blit(self.screen, (0, 0))
-            else:
-                scaled_surf = pygame.transform.scale(self.screen, (self.window_width, self.window_height))
-                self.window_surface.blit(scaled_surf, (0, 0))
             pygame.display.flip()
             
         pygame.quit()
 
     def get_mouse_pos(self):
-        wx, wy = pygame.mouse.get_pos()
-        mx = int(wx * (self.screen_width / self.window_width))
-        my = int(wy * (self.screen_height / self.window_height))
-        return mx, my
+        return pygame.mouse.get_pos()
+
+    def load_fonts(self, font_scale=1.0):
+        try:
+            self.font_menu_title = pygame.font.SysFont("Outfit", int(38 * font_scale), bold=True)
+            self.font_menu_subtitle = pygame.font.SysFont("Outfit", int(22 * font_scale), bold=True)
+            self.font_menu_button = pygame.font.SysFont("Outfit", int(18 * font_scale), bold=True)
+            self.font_menu_label = pygame.font.SysFont("Outfit", int(15 * font_scale))
+            self.font_title = pygame.font.SysFont("Outfit", int(18 * font_scale), bold=True)
+            self.font_hud = pygame.font.SysFont("Outfit", int(14 * font_scale))
+            self.font_controls = pygame.font.SysFont("Outfit", int(12 * font_scale))
+        except Exception:
+            self.font_menu_title = pygame.font.Font(None, int(46 * font_scale))
+            self.font_menu_subtitle = pygame.font.Font(None, int(26 * font_scale))
+            self.font_menu_button = pygame.font.Font(None, int(22 * font_scale))
+            self.font_menu_label = pygame.font.Font(None, int(18 * font_scale))
+            self.font_title = pygame.font.Font(None, int(22 * font_scale))
+            self.font_hud = pygame.font.Font(None, int(18 * font_scale))
+            self.font_controls = pygame.font.Font(None, int(16 * font_scale))
+
+    def get_ui_rect(self, x_from_center, y, w, h):
+        s = self.ui_scale
+        cx = self.screen_width // 2
+        return pygame.Rect(cx + int(x_from_center * s), int(y * s), int(w * s), int(h * s))
+
+    def handle_resize(self, w, h):
+        self.screen_width = w
+        self.screen_height = h
+        self.screen = self.window_surface
+        self.cx = w // 2
+        self.cy = h // 2
+        self.scale = min(w, h) / 8.0
+        self.ui_scale = min(w, h) / 800.0
+        self.load_fonts(self.ui_scale)
 
     def destroy_node(self):
         if self.is_network and self.current_match_id:
