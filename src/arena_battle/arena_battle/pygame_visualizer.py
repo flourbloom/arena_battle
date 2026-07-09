@@ -145,10 +145,11 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         pygame.display.set_caption("Arena Battle - Neon Combat")
         self.is_fullscreen = False
 
+        self.square_size = 800
         self.screen_width = 800
         self.screen_height = 800
-        # self.screen points directly to the display window surface
-        self.screen = self.window_surface
+        # self.screen is the virtual square canvas we draw onto
+        self.screen = pygame.Surface((self.screen_width, self.screen_height))
         
         # Coordinates mapping: 1 meter = 100 pixels
         self.scale = 100.0
@@ -197,7 +198,11 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
                         self.handle_resize(self.window_width, self.window_height)
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     if event.button == 1: # Left click
-                        mx, my = event.pos
+                        wx, wy = event.pos
+                        dx = (self.window_width - self.square_size) // 2
+                        dy = (self.window_height - self.square_size) // 2
+                        mx = wx - dx
+                        my = wy - dy
                         
                         if self.state == "MENU":
                             # Click name box
@@ -504,12 +509,22 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
             elif self.state == "GAMEPLAY":
                 self.render_gameplay(dt)
                 
+            # Clear window surface and blit virtual screen centered (pillarboxing/letterboxing)
+            self.window_surface.fill((8, 8, 16))
+            dx = (self.window_width - self.square_size) // 2
+            dy = (self.window_height - self.square_size) // 2
+            self.window_surface.blit(self.screen, (dx, dy))
             pygame.display.flip()
             
         pygame.quit()
 
     def get_mouse_pos(self):
-        return pygame.mouse.get_pos()
+        wx, wy = pygame.mouse.get_pos()
+        dx = (self.window_width - self.square_size) // 2
+        dy = (self.window_height - self.square_size) // 2
+        mx = wx - dx
+        my = wy - dy
+        return mx, my
 
     def load_fonts(self, font_scale=1.0):
         try:
@@ -535,13 +550,16 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         return pygame.Rect(cx + int(x_from_center * s), int(y * s), int(w * s), int(h * s))
 
     def handle_resize(self, w, h):
-        self.screen_width = w
-        self.screen_height = h
-        self.screen = self.window_surface
-        self.cx = w // 2
-        self.cy = h // 2
-        self.scale = min(w, h) / 8.0
-        self.ui_scale = min(w, h) / 800.0
+        self.window_width = w
+        self.window_height = h
+        self.square_size = min(w, h)
+        self.screen_width = self.square_size
+        self.screen_height = self.square_size
+        self.screen = pygame.Surface((self.screen_width, self.screen_height))
+        self.cx = self.screen_width // 2
+        self.cy = self.screen_height // 2
+        self.scale = self.screen_width / 8.0
+        self.ui_scale = self.screen_width / 800.0
         self.load_fonts(self.ui_scale)
 
     def destroy_node(self):
