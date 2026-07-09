@@ -139,17 +139,16 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         pygame.font.init()
         
         # Set up display
-        self.screen_width = 800
-        self.screen_height = 800
-        # self.screen is the virtual canvas we draw onto
-        self.screen = pygame.Surface((self.screen_width, self.screen_height))
-        
-        # The actual resizable window surface displayed to the user
         self.window_width = 800
         self.window_height = 800
         self.window_surface = pygame.display.set_mode((self.window_width, self.window_height), pygame.RESIZABLE)
         pygame.display.set_caption("Arena Battle - Neon Combat")
         self.is_fullscreen = False
+
+        self.screen_width = 800
+        self.screen_height = 800
+        # self.screen is the virtual canvas we draw onto
+        self.screen = pygame.Surface((self.screen_width, self.screen_height))
         
         # Coordinates mapping: 1 meter = 100 pixels
         self.scale = 100.0
@@ -519,8 +518,11 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
             elif self.state == "GAMEPLAY":
                 self.render_gameplay(dt)
                 
-            scaled_surf = pygame.transform.scale(self.screen, (self.window_width, self.window_height))
-            self.window_surface.blit(scaled_surf, (0, 0))
+            if self.window_width == self.screen_width and self.window_height == self.screen_height:
+                self.window_surface.blit(self.screen, (0, 0))
+            else:
+                scaled_surf = pygame.transform.scale(self.screen, (self.window_width, self.window_height))
+                self.window_surface.blit(scaled_surf, (0, 0))
             pygame.display.flip()
             
         pygame.quit()
