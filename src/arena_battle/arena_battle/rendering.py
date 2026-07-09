@@ -94,7 +94,7 @@ class RenderMixin:
         self.draw_input_box("ENTER PILOT NAME:", self.player_name, input_rect, self.name_input_active)
         
         # Buttons
-        mx, my = pygame.mouse.get_pos()
+        mx, my = self.get_mouse_pos()
         
         btn_local = pygame.Rect(self.screen_width // 2 - 150, 320, 300, 45)
         btn_host = pygame.Rect(self.screen_width // 2 - 150, 385, 300, 45)
@@ -148,7 +148,7 @@ class RenderMixin:
         self.screen.blit(lbl_guest_name, (self.screen_width // 2 - 170, 355))
         
         # Buttons
-        mx, my = pygame.mouse.get_pos()
+        mx, my = self.get_mouse_pos()
         btn_start = pygame.Rect(self.screen_width // 2 - 150, 480, 300, 45)
         btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
         
@@ -188,7 +188,7 @@ class RenderMixin:
                 
                 # Join button
                 join_btn_rect = pygame.Rect(self.screen_width // 2 + 120, row_y + 8, 90, 34)
-                mx, my = pygame.mouse.get_pos()
+                mx, my = self.get_mouse_pos()
                 is_hovered = join_btn_rect.collidepoint(mx, my)
                 is_full = (lobby['status'] != 'waiting')
                 btn_color = (120, 10, 120) if is_hovered and not is_full else (80, 0, 80)
@@ -200,7 +200,7 @@ class RenderMixin:
                 self.screen.blit(btn_txt, btn_txt.get_rect(center=join_btn_rect.center))
                 
         # Back button
-        mx, my = pygame.mouse.get_pos()
+        mx, my = self.get_mouse_pos()
         btn_back = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
         self.draw_button("BACK TO MENU", btn_back, (80, 15, 15), (120, 20, 20), (255, 255, 255), btn_back.collidepoint(mx, my))
 
@@ -235,7 +235,7 @@ class RenderMixin:
         self.screen.blit(lbl_status, lbl_status.get_rect(center=(self.screen_width // 2, 480)))
         
         # Button
-        mx, my = pygame.mouse.get_pos()
+        mx, my = self.get_mouse_pos()
         btn_leave = pygame.Rect(self.screen_width // 2 - 150, 545, 300, 45)
         self.draw_button("LEAVE LOBBY", btn_leave, (80, 15, 15), (120, 20, 20), (255, 255, 255), btn_leave.collidepoint(mx, my))
 
@@ -437,7 +437,7 @@ class RenderMixin:
             btn_no = pygame.Rect(self.screen_width//2 - 140, self.screen_height//2 + 40, 120, 36)
             btn_yes = pygame.Rect(self.screen_width//2 + 20, self.screen_height//2 + 40, 120, 36)
  
-            mx, my = pygame.mouse.get_pos()
+            mx, my = self.get_mouse_pos()
             self.draw_button("NO", btn_no, (30,120,60), (40,160,80), (255,255,255), btn_no.collidepoint(mx,my))
             self.draw_button("YES", btn_yes, (120,20,20), (160,40,40), (255,255,255), btn_yes.collidepoint(mx,my))
  
