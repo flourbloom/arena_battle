@@ -89,10 +89,13 @@ class NetworkMixin:
         self.game_over = False
         self.time_elapsed = 0.0
 
-    def publish_lobby_advertisement(self):
+    def publish_lobby_advertisement(self, from_timer=False):
         if self.state not in ["LOBBY_HOST", "GAMEPLAY"] or not self.is_network:
             return
             
+        if from_timer and self.state == "GAMEPLAY":
+            return
+
         if self.state == "GAMEPLAY":
             if self.lobby_data.get("status") == "end":
                 status_val = "end"
@@ -105,8 +108,8 @@ class NetworkMixin:
         else:
             status_val = self.lobby_data.get("status", "waiting")
 
-        # Guest (player_id != 1) is only allowed to advertise if it is signaling match termination ('end')
-        if self.player_id != 1 and status_val != "end":
+        # Guest (player_id != 1) is only allowed to advertise if they are in gameplay or signaling match termination ('end')
+        if self.player_id != 1 and self.state != "GAMEPLAY" and status_val != "end":
             return
 
         lobby_info = {
