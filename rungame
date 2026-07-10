@@ -35,14 +35,14 @@ echo "[Info] ROS_DOMAIN_ID=$ROS_DOMAIN_ID"
 if [ "$1" = "server" ]; then
     echo "[Start] Launching Game Logic Server..."
     export ARENA_ALLOW_LOCAL_SERVER=1
-    ros2 run arena_battle game_logic
+    ros2 launch arena_battle game_server.launch.py
 elif [ "$1" = "p1" ]; then
     echo "[Start] Launching Arena Battle Client P1..."
-    ros2 run arena_battle pygame_visualizer --ros-args -r __ns:=/p1
+    ros2 launch arena_battle game_client.launch.py namespace:=p1
 elif [ "$1" = "p2" ]; then
     echo "[Start] Launching Arena Battle Client P2..."
-    ros2 run arena_battle pygame_visualizer --ros-args -r __ns:=/p2
+    ros2 launch arena_battle game_client.launch.py namespace:=p2
 else
     echo "[Start] Launching Arena Battle Client..."
-    ros2 run arena_battle pygame_visualizer
+    ros2 launch arena_battle game_client.launch.py
 fi
