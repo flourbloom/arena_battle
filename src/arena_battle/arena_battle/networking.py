@@ -266,7 +266,7 @@ class NetworkMixin:
             p1_cmd_topic = f'/match/{matchid}/p1/command'
             p2_cmd_topic = f'/match/{matchid}/p2/command'
 
-        self.state_sub = self.create_subscription(GameState, state_topic, self.state_callback, 10)
+        self.state_sub = self.create_subscription(GameState, state_topic, self.state_callback, 1)
         self.p1_cmd_pub = self.create_publisher(RobotCombatCommand, p1_cmd_topic, 10)
         self.p2_cmd_pub = self.create_publisher(RobotCombatCommand, p2_cmd_topic, 10)
 

@@ -92,8 +92,8 @@ class GameLogic(Node):
             10
         )
         
-        # Timer for updates (100Hz -> dt = 0.01s)
-        self.dt = 0.01
+        # Timer for updates (60Hz -> dt = 0.0167s)
+        self.dt = 1.0 / 60.0
         self.timer = self.create_timer(self.dt, self.update_game)
         domain_id = os.environ.get('ROS_DOMAIN_ID', '0')
         if matchid is None:

@@ -118,7 +118,7 @@ class PygameVisualizer(Node, NetworkMixin, RenderMixin):
         self.current_match_id = None
         
         # Timers
-        self.cmd_timer = self.create_timer(0.01, self.publish_commands) # 100Hz
+        self.cmd_timer = self.create_timer(1.0 / 60.0, self.publish_commands) # 60Hz
         self.lobby_timer = self.create_timer(1.0, self.publish_lobby_advertisement) # 1Hz
         
         # Setup clean exit hooks
